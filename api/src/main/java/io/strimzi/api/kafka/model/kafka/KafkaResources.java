@@ -427,4 +427,13 @@ public class KafkaResources {
     public static String autoRebalancingKafkaRebalanceResourceName(String cluster, KafkaAutoRebalanceMode kafkaAutoRebalanceMode) {
         return cluster + "-auto-rebalancing-" + kafkaAutoRebalanceMode.toValue();
     }
+
+    /**
+     * Returns the name of the ZooKeeper truststore Secret for a {@code Kafka} cluster of the given name.
+     * @param clusterName  The {@code metadata.name} of the {@code Kafka} resource.
+     * @return The name of the corresponding ZooKeeper truststore Secret.
+     */
+    public static String externalZookeeperTruststoreName(String clusterName) {
+        return clusterName + "-external-zookeeper-truststore";
+    }
 }

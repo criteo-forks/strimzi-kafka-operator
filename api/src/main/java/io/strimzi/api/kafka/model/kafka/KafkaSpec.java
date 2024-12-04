@@ -15,6 +15,7 @@ import io.strimzi.api.kafka.model.jmxtrans.JmxTransSpec;
 import io.strimzi.api.kafka.model.kafka.cruisecontrol.CruiseControlSpec;
 import io.strimzi.api.kafka.model.kafka.entityoperator.EntityOperatorSpec;
 import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterSpec;
+import io.strimzi.api.kafka.model.zookeeper.ExternalZookeeperConnect;
 import io.strimzi.api.kafka.model.zookeeper.ZookeeperClusterSpec;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.PresentInVersions;
@@ -39,6 +40,7 @@ import java.util.List;
 public class KafkaSpec extends Spec {
     private KafkaClusterSpec kafka;
     private ZookeeperClusterSpec zookeeper;
+    private ExternalZookeeperConnect externalZookeeper;
     private EntityOperatorSpec entityOperator;
     private CertificateAuthority clusterCa;
     @SuppressWarnings("deprecation")
@@ -59,7 +61,7 @@ public class KafkaSpec extends Spec {
         this.kafka = kafka;
     }
 
-    @Description("Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster.")
+    @Description("Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster and not using external ZooKeeper.")
     public ZookeeperClusterSpec getZookeeper() {
         return zookeeper;
     }
@@ -133,5 +135,14 @@ public class KafkaSpec extends Spec {
 
     public void setCruiseControl(CruiseControlSpec cruiseControl) {
         this.cruiseControl = cruiseControl;
+    }
+
+    @Description("Configuration for external ZooKeeper connection. If this is set, the zookeeper field will be ignored.")
+    public ExternalZookeeperConnect getExternalZookeeper() {
+        return externalZookeeper;
+    }
+
+    public void setExternalZookeeper(ExternalZookeeperConnect externalZookeeper) {
+        this.externalZookeeper = externalZookeeper;
     }
 }

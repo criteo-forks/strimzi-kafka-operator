@@ -24,6 +24,7 @@ import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolList;
 import io.strimzi.api.kafka.model.podset.StrimziPodSet;
+import io.strimzi.api.kafka.model.zookeeper.ExternalZookeeperConnect;
 import io.strimzi.certs.CertManager;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
@@ -277,10 +278,11 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                 // Preparation steps => prepare cluster descriptions, handle CA creation or changes
                 .compose(state -> state.reconcileCas(clock))
                 .compose(state -> state.emitCertificateSecretMetrics())
+                .compose(state -> reconcileExternalZookeeperTrustStore(state))
                 .compose(state -> state.versionChange(kafkaMetadataConfigState.isKRaft()))
 
                 // Run reconciliations of the different components
-                .compose(state -> kafkaMetadataConfigState.isKRaft() ? Future.succeededFuture(state) : state.reconcileZooKeeper(clock))
+                .compose(state -> kafkaMetadataConfigState.isKRaft() || state.kafkaAssembly.getSpec().getExternalZookeeper() != null ? Future.succeededFuture(state) : state.reconcileZooKeeper(clock))
                 .compose(state -> reconcileState.kafkaMetadataStateManager.shouldDestroyZooKeeperNodes() ? state.reconcileZooKeeperEraser() : Future.succeededFuture(state))
                 .compose(state -> state.reconcileKafka(clock))
                 .compose(state -> state.reconcileEntityOperator(clock))
@@ -874,7 +876,31 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         boolean isAutoRebalancingEnabled() {
             return kafkaAssembly.getSpec().getCruiseControl() != null && kafkaAssembly.getSpec().getCruiseControl().getAutoRebalance() != null;
         }
+
+        private Future<ReconciliationState> reconcileExternalZookeeperTrustStore(ReconciliationState state) {
+            ExternalZookeeperConnect externalZk = state.kafkaAssembly.getSpec().getExternalZookeeper();
+            if (externalZk != null && Boolean.TRUE.equals(externalZk.getTls())) {
+                Secret trustStoreSecret = state.kafkaCluster.generateExternalZookeeperTrustStore();
+                return secretOperations.reconcile(state.namespace, KafkaResources.externalZookeeperTruststoreName(state.name), trustStoreSecret)
+                        .map(state);
+            }
+            return Future.succeededFuture(state);
+        }
     }
+
+    private void validateExternalZookeeperConfig(Kafka kafkaAssembly) {
+        ExternalZookeeperConnect externalZk = kafkaAssembly.getSpec().getExternalZookeeper();
+        if (externalZk != null) {
+            if (externalZk.getConnectString() == null || externalZk.getConnectString().isEmpty()) {
+                throw new InvalidResourceException("External ZooKeeper connect string must be specified");
+            }
+
+            if (Boolean.TRUE.equals(externalZk.getTls()) && (externalZk.getTlsTrustedCertificates() == null || externalZk.getTlsTrustedCertificates().isEmpty())) {
+                throw new InvalidResourceException("TLS is enabled for external ZooKeeper, but no trusted certificates are provided");
+            }
+        }
+    }
+
 
     @Override
     protected KafkaStatus createStatus(Kafka kafka) {

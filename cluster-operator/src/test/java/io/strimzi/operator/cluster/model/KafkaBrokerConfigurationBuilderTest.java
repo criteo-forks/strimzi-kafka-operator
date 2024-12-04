@@ -269,7 +269,7 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testZookeeperConfig()  {
         String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
-                .withZookeeper("my-cluster")
+                .withZookeeper("my-cluster", null)
                 .build();
 
         assertThat(configuration, isEquivalent("broker.id=2",
@@ -1794,7 +1794,7 @@ public class KafkaBrokerConfigurationBuilderTest {
                 .withType(KafkaListenerType.LOADBALANCER)
                 .withTls(true)
                 .build();
-      
+
         String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
                 .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", singletonList(listener), listenerId -> "dummy-advertised-address", listenerId -> "1919")
                 .build();

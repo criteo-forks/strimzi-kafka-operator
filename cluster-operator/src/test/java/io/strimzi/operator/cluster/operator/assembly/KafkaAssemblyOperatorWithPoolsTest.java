@@ -1293,7 +1293,7 @@ public class KafkaAssemblyOperatorWithPoolsTest {
                     .addToAnnotations(Annotations.ANNO_STRIMZI_IO_KRAFT, "enabled")
                 .endMetadata()
                 .editSpec()
-                    .withZookeeper(null)
+                    .withZookeeper(null, null)
                 .endSpec()
                 .build();
         when(mockKafkaOps.getAsync(eq(NAMESPACE), eq(CLUSTER_NAME))).thenReturn(Future.succeededFuture(kraftEnabledKafka));

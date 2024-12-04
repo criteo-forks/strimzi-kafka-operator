@@ -67,6 +67,7 @@ import io.strimzi.api.kafka.model.kafka.quotas.QuotasPluginStrimzi;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorage;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolStatus;
 import io.strimzi.api.kafka.model.podset.StrimziPodSet;
+import io.strimzi.api.kafka.model.zookeeper.ExternalZookeeperConnect;
 import io.strimzi.certs.CertAndKey;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.model.cruisecontrol.CruiseControlMetricsReporter;
@@ -229,6 +230,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private QuotasPlugin quotas;
     /* test */ KafkaConfiguration configuration;
     private KafkaMetadataConfigurationState kafkaMetadataConfigState;
+    private KafkaSpec kafkaSpec;
+
 
     /**
      * Warning conditions generated from the Custom Resource
@@ -268,7 +271,6 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
      */
     private KafkaCluster(Reconciliation reconciliation, HasMetadata resource, SharedEnvironmentProvider sharedEnvironmentProvider) {
         super(reconciliation, resource, KafkaResources.kafkaComponentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
-
         this.initImage = System.getenv().getOrDefault(ClusterOperatorConfig.STRIMZI_DEFAULT_KAFKA_INIT_IMAGE, "quay.io/strimzi/operator:latest");
     }
 
@@ -296,6 +298,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                                        String clusterId,
                                        SharedEnvironmentProvider sharedEnvironmentProvider) {
         KafkaSpec kafkaSpec = kafka.getSpec();
+        this.kafkaSpec = kafkaSpec;
         KafkaClusterSpec kafkaClusterSpec = kafkaSpec.getKafka();
 
         KafkaCluster result = new KafkaCluster(reconciliation, kafka, sharedEnvironmentProvider);
@@ -1350,6 +1353,16 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         volumeList.add(VolumeUtils.createConfigMapVolume(LOG_AND_METRICS_CONFIG_VOLUME_NAME, node.podName()));
         volumeList.add(VolumeUtils.createEmptyDirVolume("ready-files", "1Ki", "Memory"));
 
+        // Add external ZooKeeper certificates if configured
+        if (getExternalZookeeper() != null
+                && Boolean.TRUE.equals(getExternalZookeeper().getTls())) {
+            volumeList.add(VolumeUtils.createSecretVolume(
+                "external-zookeeper-certs",
+                KafkaResources.externalZookeeperTruststoreName(cluster),
+                isOpenShift
+            ));
+        }
+
         // Some volumes are used only on nodes with broker role and are not needed on controller-only nodes
         if (node.broker()) {
             // Volume for sharing data with init container for rack awareness and node port listeners
@@ -1434,12 +1447,23 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
      */
     private List<VolumeMount> getVolumeMounts(Storage storage, ContainerTemplate containerTemplate, boolean isBroker) {
         List<VolumeMount> volumeMountList = new ArrayList<>(VolumeUtils.createVolumeMounts(storage, false));
+
+        // Add existing volume mounts
         volumeMountList.add(VolumeUtils.createTempDirVolumeMount());
         volumeMountList.add(VolumeUtils.createVolumeMount(CLUSTER_CA_CERTS_VOLUME, CLUSTER_CA_CERTS_VOLUME_MOUNT));
         volumeMountList.add(VolumeUtils.createVolumeMount(BROKER_CERTS_VOLUME, BROKER_CERTS_VOLUME_MOUNT));
         volumeMountList.add(VolumeUtils.createVolumeMount(CLIENT_CA_CERTS_VOLUME, CLIENT_CA_CERTS_VOLUME_MOUNT));
         volumeMountList.add(VolumeUtils.createVolumeMount(LOG_AND_METRICS_CONFIG_VOLUME_NAME, LOG_AND_METRICS_CONFIG_VOLUME_MOUNT));
         volumeMountList.add(VolumeUtils.createVolumeMount("ready-files", "/var/opt/kafka"));
+
+        // Add external ZooKeeper certificates mount if configured
+        if (getExternalZookeeper() != null
+                && Boolean.TRUE.equals(getExternalZookeeper().getTls())) {
+            volumeMountList.add(VolumeUtils.createVolumeMount(
+                "external-zookeeper-certs",
+                "/tmp/kafka/external-zookeeper"
+            ));
+        }
 
         // Some volumes are used only on nodes with broker role and are not needed on controller-only nodes
         if (isBroker)   {
@@ -1477,12 +1501,12 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         if (authorization instanceof KafkaAuthorizationKeycloak keycloakAuthz) {
             CertUtils.createTrustedCertificatesVolumeMounts(volumeMountList, keycloakAuthz.getTlsTrustedCertificates(), TRUSTED_CERTS_BASE_VOLUME_MOUNT + "/authz-keycloak-certs/", "authz-keycloak");
         }
-        
+
         TemplateUtils.addAdditionalVolumeMounts(volumeMountList, containerTemplate);
 
         return volumeMountList;
     }
-    
+
     private List<VolumeMount> getInitContainerVolumeMounts(KafkaPool pool) {
         List<VolumeMount> volumeMountList = new ArrayList<>();
         volumeMountList.add(VolumeUtils.createVolumeMount(INIT_VOLUME_NAME, INIT_VOLUME_MOUNT));
@@ -1847,10 +1871,18 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private void withZooKeeperOrKRaftConfiguration(KafkaPool pool, NodeRef node, KafkaBrokerConfigurationBuilder builder) {
         if ((node.broker() && this.kafkaMetadataConfigState.isZooKeeperToMigration()) ||
                 (node.controller() && this.kafkaMetadataConfigState.isPreMigrationToKRaft() && this.kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
-            builder.withZookeeper(cluster);
-            LOGGER.debugCr(reconciliation, "Adding ZooKeeper connection configuration on node [{}]", node.podName());
+            // Check if external ZooKeeper is configured
+            ExternalZookeeperConnect externalZk = getExternalZookeeper();
+            if (externalZk != null) {
+                builder.withZookeeper(cluster, externalZk);
+                LOGGER.debugCr(reconciliation, "Adding external ZooKeeper connection configuration on node [{}]", node.podName());
+            } else {
+                builder.withZookeeper(cluster, null);
+                LOGGER.debugCr(reconciliation, "Adding internal ZooKeeper connection configuration on node [{}]", node.podName());
+            }
         }
 
+        // Rest of the method remains unchanged as it handles KRaft migration
         if ((node.broker() && this.kafkaMetadataConfigState.isMigration()) ||
                 (node.controller() && this.kafkaMetadataConfigState.isPreMigrationToKRaft() && this.kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
             builder.withZooKeeperMigration();
@@ -1863,6 +1895,11 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             builder.withKRaftMetadataLogDir(VolumeUtils.kraftMetadataPath(pool.storage));
             LOGGER.debugCr(reconciliation, "Adding KRaft configuration on node [{}]", node.podName());
         }
+    }
+
+    // Add this getter method to KafkaCluster class
+    private ExternalZookeeperConnect getExternalZookeeper() {
+        return this.kafkaSpec.getExternalZookeeper();
     }
 
     /**
@@ -2052,5 +2089,54 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         public NodePoolNotFoundException(String message) {
             super(message);
         }
+    }
+
+    public Secret generateExternalZookeeperTrustStore() {
+        ExternalZookeeperConnect externalZk = getExternalZookeeper();
+        if (externalZk == null || !Boolean.TRUE.equals(externalZk.getTls())
+                || externalZk.getTlsTrustedCertificates() == null
+                || externalZk.getTlsTrustedCertificates().isEmpty()) {
+            return null;
+        }
+
+        Map<String, String> data = new HashMap<>();
+
+        try {
+            // Create a truststore with the certificates
+            KeyStore trustStore = KeyStore.getInstance("PKCS12");
+            trustStore.load(null, null);
+
+            for (CertAndKeySecretSource cert : externalZk.getTlsTrustedCertificates()) {
+                Secret secret = pfa.getSecret(namespace, cert.getSecretName());
+                if (secret == null) {
+                    throw new InvalidResourceException("Certificate " + cert.getSecretName() + " not found");
+                }
+
+                String certKey = cert.getCertificate();
+                byte[] certBytes = Base64.getDecoder().decode(secret.getData().get(certKey));
+
+                CertificateFactory cf = CertificateFactory.getInstance("X.509");
+                Certificate certificate = cf.generateCertificate(new ByteArrayInputStream(certBytes));
+                trustStore.setCertificateEntry(certKey, certificate);
+            }
+
+            // Store the truststore
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            trustStore.store(baos, CERTS_STORE_PASSWORD.toCharArray());
+            data.put("truststore.p12", Base64.getEncoder().encodeToString(baos.toByteArray()));
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to generate external ZooKeeper truststore", e);
+        }
+
+        return ModelUtils.createSecret(
+            KafkaResources.externalZookeeperTruststoreName(cluster),
+            namespace,
+            labels,
+            ownerReference,
+            data,
+            Collections.emptyMap(),
+            Collections.emptyMap()
+        );
     }
 }

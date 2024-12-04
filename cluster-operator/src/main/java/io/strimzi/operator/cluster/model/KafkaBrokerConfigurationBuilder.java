@@ -27,6 +27,7 @@ import io.strimzi.api.kafka.model.kafka.quotas.QuotasPluginStrimzi;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.RemoteStorageManager;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorage;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorageCustom;
+import io.strimzi.api.kafka.model.zookeeper.ExternalZookeeperConnect;
 import io.strimzi.kafka.oauth.server.ServerConfig;
 import io.strimzi.kafka.oauth.server.plain.ServerPlainConfig;
 import io.strimzi.operator.cluster.model.cruisecontrol.CruiseControlMetricsReporter;
@@ -167,22 +168,46 @@ public class KafkaBrokerConfigurationBuilder {
      * Configures the Zookeeper connection URL.
      *
      * @param clusterName The name of the Kafka custom resource
+     * @param externalZookeeper The external ZooKeeper configuration (if any)
      *
      * @return Returns the builder instance
      */
-    public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName)  {
+    public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName, ExternalZookeeperConnect externalZookeeper) {
         printSectionHeader("Zookeeper");
-        writer.println(String.format("zookeeper.connect=%s:%d", KafkaResources.zookeeperServiceName(clusterName), ZookeeperCluster.CLIENT_TLS_PORT));
-        writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
-        writer.println("zookeeper.ssl.client.enable=true");
-        writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
-        writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
-        writer.println("zookeeper.ssl.keystore.type=PKCS12");
-        writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
-        writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
-        writer.println("zookeeper.ssl.truststore.type=PKCS12");
-        writer.println();
 
+        if (externalZookeeper != null) {
+            // Configure external ZooKeeper connection
+            writer.println("zookeeper.connect=" + externalZookeeper.getConnectString());
+
+            if (Boolean.TRUE.equals(externalZookeeper.getTls())) {
+                writer.println("zookeeper.ssl.client.enable=true");
+                writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
+
+                // Configure TLS certificates if provided
+                if (externalZookeeper.getTlsTrustedCertificates() != null && !externalZookeeper.getTlsTrustedCertificates().isEmpty()) {
+                    writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/external-zookeeper/truststore.p12");
+                    writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+                    writer.println("zookeeper.ssl.truststore.type=PKCS12");
+                }
+            } else {
+                writer.println("zookeeper.ssl.client.enable=false");
+            }
+        } else {
+            // Configure internal ZooKeeper connection (existing code)
+            writer.println(String.format("zookeeper.connect=%s:%d",
+                KafkaResources.zookeeperServiceName(clusterName),
+                ZookeeperCluster.CLIENT_TLS_PORT));
+            writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
+            writer.println("zookeeper.ssl.client.enable=true");
+            writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
+            writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+            writer.println("zookeeper.ssl.keystore.type=PKCS12");
+            writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
+            writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+            writer.println("zookeeper.ssl.truststore.type=PKCS12");
+        }
+
+        writer.println();
         return this;
     }
 
