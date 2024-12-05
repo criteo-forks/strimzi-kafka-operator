@@ -278,7 +278,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                 // Preparation steps => prepare cluster descriptions, handle CA creation or changes
                 .compose(state -> state.reconcileCas(clock))
                 .compose(state -> state.emitCertificateSecretMetrics())
-                .compose(state -> reconcileExternalZookeeperTrustStore(state))
+                .compose(state -> state.kafkaAssembly.getSpec().getExternalZookeeper().getTls() ?  reconcileExternalZookeeperTrustStore(state)) : Future.succeededFuture(state)
                 .compose(state -> state.versionChange(kafkaMetadataConfigState.isKRaft()))
 
                 // Run reconciliations of the different components

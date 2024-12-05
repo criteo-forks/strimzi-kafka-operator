@@ -3443,7 +3443,52 @@ spec:
                 required:
                 - replicas
                 - storage
-                description: Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster.
+                description: Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster and not using external ZooKeeper.
+              externalZookeeper:
+                type: object
+                properties:
+                  connectString:
+                    type: string
+                    description: The connection string for the external ZooKeeper cluster.
+                  tls:
+                    type: boolean
+                    description: Enable TLS for ZooKeeper connection.
+                  tlsTrustedCertificates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        secretName:
+                          type: string
+                          description: The name of the Secret containing the certificate.
+                        certificate:
+                          type: string
+                          description: The name of the file certificate in the Secret.
+                        key:
+                          type: string
+                          description: The name of the private key in the Secret.
+                      required:
+                      - secretName
+                      - certificate
+                      - key
+                    description: Trusted certificates for TLS connection.
+                  username:
+                    type: string
+                    description: Username for authentication against ZooKeeper.
+                  passwordSecret:
+                    type: object
+                    properties:
+                      secretName:
+                        type: string
+                        description: The name of the Secret containing the password.
+                      password:
+                        type: string
+                        description: The name of the key in the Secret under which the password is stored.
+                    required:
+                    - secretName
+                    - password
+                    description: Reference to the Secret containing the password for authentication.
+                description: "Configuration for external ZooKeeper connection. If this is set, the zookeeper field will be ignored."
               entityOperator:
                 type: object
                 properties:

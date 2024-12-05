@@ -30,7 +30,10 @@ Used in: xref:type-Kafka-{context}[`Kafka`]
 |Configuration of the Kafka cluster.
 |zookeeper
 |xref:type-ZookeeperClusterSpec-{context}[`ZookeeperClusterSpec`]
-|Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster.
+|Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster and not using external ZooKeeper.
+|externalZookeeper
+|xref:type-ExternalZookeeperConnect-{context}[`ExternalZookeeperConnect`]
+|Configuration for external ZooKeeper connection. If this is set, the zookeeper field will be ignored.
 |entityOperator
 |xref:type-EntityOperatorSpec-{context}[`EntityOperatorSpec`]
 |Configuration of the Entity Operator.
@@ -519,7 +522,7 @@ For `loadbalancer` listeners only.
 [id='type-CertAndKeySecretSource-{context}']
 = `CertAndKeySecretSource` schema reference
 
-Used in: xref:type-GenericKafkaListenerConfiguration-{context}[`GenericKafkaListenerConfiguration`], xref:type-KafkaClientAuthenticationTls-{context}[`KafkaClientAuthenticationTls`]
+Used in: xref:type-ExternalZookeeperConnect-{context}[`ExternalZookeeperConnect`], xref:type-GenericKafkaListenerConfiguration-{context}[`GenericKafkaListenerConfiguration`], xref:type-KafkaClientAuthenticationTls-{context}[`KafkaClientAuthenticationTls`]
 
 
 [cols="2,2,3a",options="header"]
@@ -1602,6 +1605,49 @@ Used in: xref:type-ZookeeperClusterSpec-{context}[`ZookeeperClusterSpec`]
 |Template for Secret of the Zookeeper Cluster JMX authentication.
 |====
 
+[id='type-ExternalZookeeperConnect-{context}']
+= `ExternalZookeeperConnect` schema reference
+
+Used in: xref:type-KafkaSpec-{context}[`KafkaSpec`]
+
+
+[cols="2,2,3a",options="header"]
+|====
+|Property |Property type |Description
+|connectString
+|string
+|The connection string for the external ZooKeeper cluster.
+|tls
+|boolean
+|Enable TLS for ZooKeeper connection.
+|tlsTrustedCertificates
+|xref:type-CertAndKeySecretSource-{context}[`CertAndKeySecretSource`] array
+|Trusted certificates for TLS connection.
+|username
+|string
+|Username for authentication against ZooKeeper.
+|passwordSecret
+|xref:type-PasswordSecretSource-{context}[`PasswordSecretSource`]
+|Reference to the Secret containing the password for authentication.
+|====
+
+[id='type-PasswordSecretSource-{context}']
+= `PasswordSecretSource` schema reference
+
+Used in: xref:type-ExternalZookeeperConnect-{context}[`ExternalZookeeperConnect`], xref:type-KafkaClientAuthenticationOAuth-{context}[`KafkaClientAuthenticationOAuth`], xref:type-KafkaClientAuthenticationPlain-{context}[`KafkaClientAuthenticationPlain`], xref:type-KafkaClientAuthenticationScramSha256-{context}[`KafkaClientAuthenticationScramSha256`], xref:type-KafkaClientAuthenticationScramSha512-{context}[`KafkaClientAuthenticationScramSha512`]
+
+
+[cols="2,2,3a",options="header"]
+|====
+|Property |Property type |Description
+|secretName
+|string
+|The name of the Secret containing the password.
+|password
+|string
+|The name of the key in the Secret under which the password is stored.
+|====
+
 [id='type-EntityOperatorSpec-{context}']
 = `EntityOperatorSpec` schema reference
 
@@ -2578,23 +2624,6 @@ include::../api/io.strimzi.api.kafka.model.common.authentication.KafkaClientAuth
 |passwordSecret
 |xref:type-PasswordSecretSource-{context}[`PasswordSecretSource`]
 |Reference to the `Secret` which holds the password.
-|====
-
-[id='type-PasswordSecretSource-{context}']
-= `PasswordSecretSource` schema reference
-
-Used in: xref:type-KafkaClientAuthenticationOAuth-{context}[`KafkaClientAuthenticationOAuth`], xref:type-KafkaClientAuthenticationPlain-{context}[`KafkaClientAuthenticationPlain`], xref:type-KafkaClientAuthenticationScramSha256-{context}[`KafkaClientAuthenticationScramSha256`], xref:type-KafkaClientAuthenticationScramSha512-{context}[`KafkaClientAuthenticationScramSha512`]
-
-
-[cols="2,2,3a",options="header"]
-|====
-|Property |Property type |Description
-|secretName
-|string
-|The name of the Secret containing the password.
-|password
-|string
-|The name of the key in the Secret under which the password is stored.
 |====
 
 [id='type-KafkaClientAuthenticationScramSha512-{context}']
