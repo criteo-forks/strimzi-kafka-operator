@@ -16,7 +16,7 @@
     </licenses>
 
     <properties>
-        <cruise-control.version>2.5.137</cruise-control.version>
+        <cruise-control.version>2.5.137-criteo</cruise-control.version>
     </properties>
 
     <repositories>
@@ -28,7 +28,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>com.linkedin.cruisecontrol</groupId>
+            <groupId>com.criteo.kafka</groupId>
             <artifactId>cruise-control</artifactId>
             <version>${cruise-control.version}</version>
         </dependency>
