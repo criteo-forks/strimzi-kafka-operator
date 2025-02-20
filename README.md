@@ -1,5 +1,7 @@
 [![Strimzi](./documentation/logo/strimzi.png)](https://strimzi.io/)
 
+Criteo-Fork
+
 # Run Apache Kafka on Kubernetes and OpenShift
 
 [![Build Status](https://dev.azure.com/cncf/strimzi/_apis/build/status/build?branchName=main)](https://dev.azure.com/cncf/strimzi/_build/latest?definitionId=16&branchName=main)
