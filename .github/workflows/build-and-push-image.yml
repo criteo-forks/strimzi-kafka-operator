@@ -69,14 +69,21 @@ jobs:
         id: image_tags
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            # Tag push event: use the git tag as the image tag.
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "Detected tag push: $TAG_NAME"
             echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${TAG_NAME}" >> $GITHUB_OUTPUT
-            echo "IMAGE_TAG_STABLE=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:stable" >> $GITHUB_OUTPUT
-          else
-            echo "Detected branch or PR push: ${GITHUB_REF}"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:latest" >> $GITHUB_OUTPUT
             echo "IMAGE_TAG_STABLE=" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            # Pull Request event: tag with the commit SHA.
+            echo "Detected pull_request event"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG_STABLE=" >> $GITHUB_OUTPUT
+          else
+            # Branch push event on criteo-0.42.x: tag with commit SHA and update 'latest'.
+            echo "Detected branch push: ${GITHUB_REF}"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG_STABLE=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:latest" >> $GITHUB_OUTPUT
           fi
           
       - name: Build and Push Docker Image
