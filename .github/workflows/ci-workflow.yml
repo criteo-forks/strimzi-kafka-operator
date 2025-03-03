@@ -54,27 +54,39 @@ jobs:
         working-directory: docker-images
         run: make docker_build
 
-      - name: Determine Image Tag
+      - name: Determine Image Tags
         id: image_tags
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            # For tag push events, use the git tag as the image tag.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -z "${{ github.event.inputs.commit_sha }}" ]; then
+              echo "Error: commit_sha input is required" >&2
+              exit 1
+            fi
+            COMMIT=${{ github.event.inputs.commit_sha }}
+            echo "Detected manual trigger with commit: $COMMIT"
+            echo "BUILD_TAG=$COMMIT" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "Detected tag push: $TAG_NAME"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${TAG_NAME}" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            # For pull requests, use the commit SHA.
-            echo "Detected pull_request event"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "BUILD_TAG=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=stable" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Detected pull_request merged event"
+            echo "BUILD_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=latest" >> $GITHUB_OUTPUT
           else
-            # For branch pushes, use the commit SHA.
             echo "Detected branch push: ${GITHUB_REF}"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "BUILD_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=latest" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build Docker Image (CI Only)
-        uses: docker/build-push-action@v3
-        with:
-          context: ./docker-images
-          push: false
-          tags: ${{ steps.image_tags.outputs.IMAGE_TAG }}
+      - name: Tag Docker Image using Makefile
+        working-directory: docker-images
+        run: make docker_tag BUILD_TAG=${{ steps.image_tags.outputs.IMAGE_TAG }}
+        
+      - name: Print Success Message with Image Tags
+        run: |
+          echo "Success: Docker image build complete."
+          echo "BUILD_TAG: ${{ steps.image_tags.outputs.BUILD_TAG }}"
+          echo "DOCKER_TAG: ${{ steps.image_tags.outputs.DOCKER_TAG }}"
