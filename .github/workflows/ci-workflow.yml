@@ -66,12 +66,12 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "Detected tag push: $TAG_NAME"
-            echo "BUILD_TAG=$TAG_NAME" >> $GITHUB_OUTPUT
-            echo "DOCKER_TAG=stable" >> $GITHUB_OUTPUT
+            echo "BUILD_TAG=latest" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=$TAG_NAME" >> $GITHUB_OUTPUT
           else
             echo "Detected branch push: ${GITHUB_REF}"
-            echo "BUILD_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
-            echo "DOCKER_TAG=latest" >> $GITHUB_OUTPUT
+            echo "BUILD_TAG=latest" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           fi
 
       - name: List Docker Images
