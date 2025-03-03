@@ -75,6 +75,6 @@ jobs:
       - name: Build Docker Image (CI Only)
         uses: docker/build-push-action@v3
         with:
-          context: .
+          context: ./docker-images
           push: false
           tags: ${{ steps.image_tags.outputs.IMAGE_TAG }}

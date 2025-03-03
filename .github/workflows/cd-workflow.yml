@@ -113,7 +113,7 @@ jobs:
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v3
         with:
-          context: .
+          context: ./docker-images
           push: true
           tags: |
             ${{ steps.image_tags.outputs.IMAGE_TAG }}
