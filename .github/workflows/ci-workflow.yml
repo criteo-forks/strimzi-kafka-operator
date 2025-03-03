@@ -1,12 +1,9 @@
 name: CI Workflow - Build Docker Images
 
-# CI is applied to every push and pull request,
+# CI is applied to every push event to any branch,
 # except for the upstream branch that is auto-tracking the original Strimzi repository.
 on:
   push:
-    branches-ignore:
-      - upstream
-  pull_request:
     branches-ignore:
       - upstream
 
