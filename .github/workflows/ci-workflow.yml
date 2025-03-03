@@ -61,15 +61,15 @@ jobs:
             # For tag push events, use the git tag as the image tag.
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "Detected tag push: $TAG_NAME"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${TAG_NAME}" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=${TAG_NAME}" >> $GITHUB_OUTPUT
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             # For pull requests, use the commit SHA.
             echo "Detected pull_request event"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           else
             # For branch pushes, use the commit SHA.
             echo "Detected branch push: ${GITHUB_REF}"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           fi
 
       - name: Tag Docker Image using Makefile
