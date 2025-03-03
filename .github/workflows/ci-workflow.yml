@@ -10,6 +10,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      PROJECT_NAME: strimzi-kafka-operator
+      DOCKER_REGISTRY: ghcr.io
+      DOCKER_ORG: ${{ github.repository_owner }}
+      
     steps:
       - name: Determine checkout ref based on event
         id: set_checkout_ref
