@@ -1,0 +1,83 @@
+name: CI Workflow - Build Docker Images
+
+# CI is applied to every push and pull request,
+# except for the upstream branch that is auto-tracking the original Strimzi repository.
+on:
+  push:
+    branches-ignore:
+      - upstream
+  pull_request:
+    branches-ignore:
+      - upstream
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine checkout ref based on event
+        id: set_checkout_ref
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "checkout_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          fi 
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.set_checkout_ref.outputs.checkout_ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: maven
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Build with Maven
+        run: mvn -B -V -e -Dfindbugs.skip -Dcheckstyle.skip -Dpmd.skip=true -Denforcer.skip -Dmaven.javadoc.skip -DskipTests -Dmaven.test.skip.exec -Dlicense.skip=true -Drat.skip=true clean install
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Maven Build and Install JAR files
+        working-directory: docker-images/artifacts
+        run: make java_install
+
+      - name: Build Docker Images
+        working-directory: docker-images
+        run: make docker_build
+
+      - name: Determine Image Tag
+        id: image_tags
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            # For tag push events, use the git tag as the image tag.
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            echo "Detected tag push: $TAG_NAME"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${TAG_NAME}" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            # For pull requests, use the commit SHA.
+            echo "Detected pull_request event"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          else
+            # For branch pushes, use the commit SHA.
+            echo "Detected branch push: ${GITHUB_REF}"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Docker Image (CI Only)
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: false
+          tags: ${{ steps.image_tags.outputs.IMAGE_TAG }}

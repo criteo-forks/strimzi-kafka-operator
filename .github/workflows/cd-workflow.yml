@@ -1,5 +1,8 @@
-name: Build and Push Strimzi Docker Image to ghcr.io
+name: CD Workflow - Build and Release Docker Images
 
+# CD is auto-triggered on push events to the criteo-0.42.x branch (PR merged or git tag)
+# CD can be manually triggered with a specific commit SHA (please publish alternative)
+# See step "Determine Image Tags" for how the image tag is determined based on the event
 on:
   push:
     branches:
@@ -9,20 +12,30 @@ on:
   pull_request:
     branches:
       - criteo-0.42.x
-    types: [opened, synchronize, reopened, closed]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to build'
+        required: true
 
 jobs:
-  build-and-push:
+  build-and-release:
+    # For pull_request events, only run if the PR is merged.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Determine checkout ref based on event
         id: set_checkout_ref
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "checkout_ref=${{ github.event.inputs.commit_sha }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "checkout_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
           else
             echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
-          fi 
+          fi
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -57,7 +70,7 @@ jobs:
             username: ${{ github.actor }}
             password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download dependencies
+      - name: Maven Build and Install JAR files
         working-directory: docker-images/artifacts
         run: make java_install
 
@@ -65,22 +78,33 @@ jobs:
         working-directory: docker-images
         run: make docker_build
 
+      # Based on triggering event, determine the image tag to use
+      # - For PR merge: use the commit SHA + 'latest'
+      # - For git tag push: use the tag name + 'stable'
+      # - For branch push: use the commit SHA + 'latest'
+      # - For manual trigger: use the provided commit SHA
       - name: Determine Image Tags
         id: image_tags
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            # Tag push event: use the git tag as the image tag.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -z "${{ github.event.inputs.commit_sha }}" ]; then
+              echo "Error: commit_sha input is required" >&2
+              exit 1
+            fi
+            COMMIT=${{ github.event.inputs.commit_sha }}
+            echo "Detected manual trigger with commit: $COMMIT"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:$COMMIT" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG_STABLE=" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG_NAME=${GITHUB_REF#refs/tags/}
             echo "Detected tag push: $TAG_NAME"
-            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${TAG_NAME}" >> $GITHUB_OUTPUT
-            echo "IMAGE_TAG_STABLE=" >> $GITHUB_OUTPUT
-          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            # Pull Request event: tag with the commit SHA.
-            echo "Detected pull_request event"
+            echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG_STABLE=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:stable" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Detected pull_request merged event"
             echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
-            echo "IMAGE_TAG_STABLE=" >> $GITHUB_OUTPUT
+            echo "IMAGE_TAG_STABLE=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:latest" >> $GITHUB_OUTPUT
           else
-            # Branch push event on criteo-0.42.x: tag with commit SHA and update 'latest'.
             echo "Detected branch push: ${GITHUB_REF}"
             echo "IMAGE_TAG=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:${GITHUB_SHA}" >> $GITHUB_OUTPUT
             echo "IMAGE_TAG_STABLE=ghcr.io/${GITHUB_REPOSITORY_OWNER}/strimzi-kafka-operator:latest" >> $GITHUB_OUTPUT
