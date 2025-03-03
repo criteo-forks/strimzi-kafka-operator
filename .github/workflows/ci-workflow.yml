@@ -77,6 +77,8 @@ jobs:
             echo "Detected branch push: ${GITHUB_REF}"
             echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_OUTPUT
           fi
+      - name: List Docker Images
+        run: docker images
 
       - name: Tag Docker Image using Makefile
         working-directory: docker-images
