@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthentication;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.sundr.builder.annotations.Buildable;
@@ -28,11 +29,12 @@ import java.util.Map;
 @JsonPropertyOrder({"connect", "tls", "authentication", "config"})
 @EqualsAndHashCode
 @ToString
-public class ExternalZooKeeperSpec {
+public class ExternalZooKeeperSpec implements UnknownPropertyPreserving {
     private String connect;
     private Boolean tls = false;
     private KafkaClientAuthentication authentication;
     private Map<String, Object> config = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     @Description("Connection string for the external ZooKeeper ensemble. " +
             "Format: host1:port1,host2:port2,host3:port3")
@@ -71,5 +73,18 @@ public class ExternalZooKeeperSpec {
 
     public void setConfig(Map<String, Object> config) {
         this.config = config;
+    }
+
+    @Override
+    public Map<String, Object> getAdditionalProperties() {
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
+    }
+
+    @Override
+    public void setAdditionalProperty(String name, Object value) {
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
+        }
+        this.additionalProperties.put(name, value);
     }
 }
