@@ -6,14 +6,16 @@ package io.strimzi.operator.cluster.model;
 
 import io.strimzi.api.kafka.model.kafka.Kafka;
 import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorage;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorageBuilder;
 import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
 import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpecBuilder;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTls;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTlsBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSourceBuilder;
-import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
+import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.test.TestUtils;
@@ -41,17 +43,17 @@ public class ExternalZooKeeperTest {
                         .withNewExternalZooKeeper()
                             .withConnect("zoo1:2181,zoo2:2181")
                         .endExternalZooKeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endKafka()
                     .editZookeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endZookeeper()
                 .endSpec()
                 .build();
 
         ExternalZooKeeperSpec externalZk = kafka.getSpec().getKafka().getExternalZooKeeper();
         assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
-        assertThat(externalZk.getTls(), is(nullValue()));
+        assertThat(externalZk.getTls(), is(false));
     }
 
     @Test
@@ -63,10 +65,10 @@ public class ExternalZooKeeperTest {
                             .withConnect("zoo1:2181,zoo2:2181")
                             .withTls(true)
                         .endExternalZooKeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endKafka()
                     .editZookeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endZookeeper()
                 .endSpec()
                 .build();
@@ -78,24 +80,26 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperWithTlsAuthentication() {
+        KafkaClientAuthenticationTls tlsAuth = new KafkaClientAuthenticationTlsBuilder()
+                .withNewCertAndKey()
+                    .withNewSecretName("zoo-secret")
+                    .withCertificate("zoo.crt")
+                    .withKey("zoo.key")
+                .endCertAndKey()
+                .build();
+
         Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
                     .editKafka()
                         .withNewExternalZooKeeper()
                             .withConnect("zoo1:2181,zoo2:2181")
                             .withTls(true)
-                            .withNewTlsClientAuthentication()
-                                .withNewCertAndKey()
-                                    .withNewSecretName("zoo-secret")
-                                    .withCertificate("zoo.crt")
-                                    .withKey("zoo.key")
-                                .endCertAndKey()
-                            .endTlsClientAuthentication()
+                            .withAuthentication(tlsAuth)
                         .endExternalZooKeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endKafka()
                     .editZookeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endZookeeper()
                 .endSpec()
                 .build();
@@ -108,18 +112,20 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperWithCustomConfigurations() {
+        ExternalZooKeeperSpec externalZkSpec = new ExternalZooKeeperSpecBuilder()
+                .withConnect("zoo1:2181,zoo2:2181")
+                .withTls(false)
+                .withConfig(Map.of("zookeeper.connect.timeout.ms", "30000"))
+                .build();
+
         Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
                     .editKafka()
-                        .withNewExternalZooKeeper()
-                            .withConnect("zoo1:2181,zoo2:2181")
-                            .withTls(false)
-                            .addToConfiguration("zookeeper.connect.timeout.ms", "30000")
-                        .endExternalZooKeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withExternalZooKeeper(externalZkSpec)
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endKafka()
                     .editZookeeper()
-                        .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                        .withStorage(new EphemeralStorageBuilder().build())
                     .endZookeeper()
                 .endSpec()
                 .build();
@@ -127,7 +133,7 @@ public class ExternalZooKeeperTest {
         ExternalZooKeeperSpec externalZk = kafka.getSpec().getKafka().getExternalZooKeeper();
         assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
         assertThat(externalZk.getTls(), is(false));
-        assertThat(externalZk.getConfiguration().get("zookeeper.connect.timeout.ms"), is("30000"));
+        assertThat(externalZk.getConfig().get("zookeeper.connect.timeout.ms"), is("30000"));
     }
 
     @Test
@@ -140,10 +146,10 @@ public class ExternalZooKeeperTest {
                             .withNewExternalZooKeeper()
                                 .withConnect("zoo1:2181,zoo2:2181")
                             .endExternalZooKeeper()
-                            .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                            .withStorage(new EphemeralStorageBuilder().build())
                         .endKafka()
                         .editZookeeper()
-                            .withStorage(TestUtils.fromYamlString("type: ephemeral", Storage.class))
+                            .withStorage(new EphemeralStorageBuilder().build())
                             .withReplicas(3)
                         .endZookeeper()
                     .endSpec()
