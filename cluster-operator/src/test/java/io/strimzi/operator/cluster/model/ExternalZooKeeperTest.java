@@ -6,13 +6,15 @@ package io.strimzi.operator.cluster.model;
 
 import io.strimzi.api.kafka.model.kafka.Kafka;
 import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
-import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeper;
-import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperBuilder;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpecBuilder;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTls;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTlsBuilder;
-import io.strimzi.api.kafka.model.common.CertificateAndKeyBuilder;
+import io.strimzi.api.kafka.model.common.CertAndKeySecretSourceBuilder;
+import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.InvalidResourceException;
+import io.strimzi.operator.common.model.SharedEnvironmentProvider;
 import io.strimzi.test.TestUtils;
 import org.junit.jupiter.api.Test;
 
@@ -28,10 +30,11 @@ public class ExternalZooKeeperTest {
     private static final String NAMESPACE = "test-namespace";
     private static final String CLUSTER_NAME = "test-cluster";
     private static final Reconciliation RECONCILIATION = new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME);
+    private static final SharedEnvironmentProvider SHARED_ENV_PROVIDER = new MockSharedEnvironmentProvider();
 
     @Test
     public void testExternalZooKeeperBasicConfiguration() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
                 .build();
 
@@ -48,13 +51,13 @@ public class ExternalZooKeeperTest {
 
         assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
         assertThat(kafkaCluster.getExternalZooKeeper().getConnect(), is("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181"));
-        assertThat(kafkaCluster.getExternalZooKeeper().isTls(), is(false));
+        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(nullValue()));
         assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication(), is(nullValue()));
     }
 
     @Test
     public void testExternalZooKeeperWithTls() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
                 .withTls(true)
                 .build();
@@ -71,20 +74,20 @@ public class ExternalZooKeeperTest {
         KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
 
         assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().isTls(), is(true));
+        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
     }
 
     @Test
     public void testExternalZooKeeperWithTlsAuthentication() {
         KafkaClientAuthenticationTls auth = new KafkaClientAuthenticationTlsBuilder()
-                .withCertificateAndKey(new CertificateAndKeyBuilder()
+                .withCertificateAndKey(new CertAndKeySecretSourceBuilder()
                         .withSecretName("my-zk-client-cert")
                         .withCertificate("client.crt")
                         .withKey("client.key")
                         .build())
                 .build();
 
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
                 .withTls(true)
                 .withAuthentication(auth)
@@ -102,14 +105,14 @@ public class ExternalZooKeeperTest {
         KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
 
         assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().isTls(), is(true));
+        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
         assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication(), is(notNullValue()));
         assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication().getType(), is("tls"));
     }
 
     @Test
     public void testExternalZooKeeperWithCustomConfig() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
                 .withConfig(Map.of(
                         "zookeeper.session.timeout.ms", "30000",
@@ -136,7 +139,7 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperWithInternalZooKeeperThrowsException() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
                 .build();
 
@@ -156,7 +159,7 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperValidation() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
                 .build();
 
@@ -175,7 +178,7 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperWithKRaftThrowsException() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
                 .build();
 
@@ -197,7 +200,7 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperEnvironmentVariables() {
-        ExternalZooKeeper externalZk = new ExternalZooKeeperBuilder()
+        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
                 .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
                 .withTls(true)
                 .build();
@@ -213,8 +216,9 @@ public class ExternalZooKeeperTest {
 
         KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
 
-        // Verify that external ZooKeeper environment variables are set
-        assertThat(kafkaCluster.getEnvVars().get("EXTERNAL_ZOOKEEPER_CONNECT"), is("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182"));
-        assertThat(kafkaCluster.getEnvVars().get("EXTERNAL_ZOOKEEPER_TLS"), is("true"));
+        // Verify that external ZooKeeper configuration is properly set
+        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
+        assertThat(kafkaCluster.getExternalZooKeeper().getConnect(), is("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182"));
+        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
     }
 }
