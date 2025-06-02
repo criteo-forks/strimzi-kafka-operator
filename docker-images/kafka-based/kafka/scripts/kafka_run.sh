@@ -47,6 +47,9 @@ mkdir -p /tmp/kafka
 # Import certificates into keystore and truststore
 ./kafka_tls_prepare_certificates.sh
 
+# Prepare external ZooKeeper certificates if configured
+./external_zookeeper_tls_prepare_certificates.sh
+
 # Generate and print the config file
 echo "Starting Kafka with configuration:"
 ./kafka_config_generator.sh | tee /tmp/strimzi.properties | sed -e 's/sasl.jaas.config=.*/sasl.jaas.config=[hidden]/g' -e 's/password=.*/password=[hidden]/g'

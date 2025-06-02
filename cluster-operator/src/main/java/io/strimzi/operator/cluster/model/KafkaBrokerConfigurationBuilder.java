@@ -27,6 +27,7 @@ import io.strimzi.api.kafka.model.kafka.quotas.QuotasPluginStrimzi;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.RemoteStorageManager;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorage;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorageCustom;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
 import io.strimzi.kafka.oauth.server.ServerConfig;
 import io.strimzi.kafka.oauth.server.plain.ServerPlainConfig;
 import io.strimzi.operator.cluster.model.cruisecontrol.CruiseControlMetricsReporter;
@@ -176,25 +177,68 @@ public class KafkaBrokerConfigurationBuilder {
     }
 
     /**
-     * Configures the Zookeeper connection URL.
+     * Adds the ZooKeeper connection configuration to the Kafka broker configuration. If external ZooKeeper is configured,
+     * it uses the external connection. Otherwise, it uses the internal Strimzi-managed ZooKeeper.
      *
      * @param clusterName The name of the Kafka custom resource
+     * @param externalZooKeeper Optional external ZooKeeper configuration, null if using internal ZooKeeper
      *
      * @return Returns the builder instance
      */
-    public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName)  {
+    public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName, ExternalZooKeeperSpec externalZooKeeper)  {
         printSectionHeader("Zookeeper");
-        writer.println(String.format("zookeeper.connect=%s:%d", KafkaResources.zookeeperServiceName(clusterName), ZookeeperCluster.CLIENT_TLS_PORT));
-        writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
-        writer.println("zookeeper.ssl.client.enable=true");
-        writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
-        writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
-        writer.println("zookeeper.ssl.keystore.type=PKCS12");
-        writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
-        writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
-        writer.println("zookeeper.ssl.truststore.type=PKCS12");
-        writer.println();
 
+        if (externalZooKeeper != null) {
+            // Use external ZooKeeper configuration
+            writer.println("zookeeper.connect=" + externalZooKeeper.getConnect());
+
+            if (externalZooKeeper.getTls() != null && externalZooKeeper.getTls()) {
+                writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
+                writer.println("zookeeper.ssl.client.enable=true");
+
+                // Configure external ZooKeeper TLS certificates based on authentication config
+                if (externalZooKeeper.getAuthentication() != null
+                    && "tls".equals(externalZooKeeper.getAuthentication().getType())) {
+                    // Use client certificate authentication with external certificates
+                    writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/external-zookeeper.keystore.p12");
+                    writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+                    writer.println("zookeeper.ssl.keystore.type=PKCS12");
+                    writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/external-zookeeper.truststore.p12");
+                    writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+                    writer.println("zookeeper.ssl.truststore.type=PKCS12");
+                } else {
+                    // Use cluster certificates for TLS encryption only (no client auth)
+                    writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
+                    writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+                    writer.println("zookeeper.ssl.keystore.type=PKCS12");
+                    writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
+                    writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+                    writer.println("zookeeper.ssl.truststore.type=PKCS12");
+                }
+            }
+
+            // Add any additional ZooKeeper configuration from the spec
+            if (externalZooKeeper.getConfig() != null) {
+                for (Map.Entry<String, Object> entry : externalZooKeeper.getConfig().entrySet()) {
+                    if (entry.getKey().startsWith("zookeeper.")) {
+                        writer.println(entry.getKey() + "=" + entry.getValue());
+                    }
+                }
+            }
+        } else {
+            // Use internal Strimzi-managed ZooKeeper (existing behavior)
+            writer.println(String.format("zookeeper.connect=%s:%d", KafkaResources.zookeeperServiceName(clusterName), ZookeeperCluster.CLIENT_TLS_PORT));
+            writer.println("zookeeper.clientCnxnSocket=org.apache.zookeeper.ClientCnxnSocketNetty");
+            writer.println("zookeeper.ssl.client.enable=true");
+            writer.println("zookeeper.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
+            writer.println("zookeeper.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+            writer.println("zookeeper.ssl.keystore.type=PKCS12");
+            writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
+            writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
+            writer.println("zookeeper.ssl.truststore.type=PKCS12");
+        }
+
+        writer.println();
         return this;
     }
 
@@ -1017,5 +1061,17 @@ public class KafkaBrokerConfigurationBuilder {
      */
     public String build()  {
         return stringWriter.toString();
+    }
+
+    /**
+     * Adds the ZooKeeper connection configuration to the Kafka broker configuration using internal Strimzi-managed ZooKeeper.
+     * This is a backward compatibility method.
+     *
+     * @param clusterName The name of the Kafka custom resource
+     *
+     * @return Returns the builder instance
+     */
+    public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName)  {
+        return withZookeeper(clusterName, null);
     }
 }

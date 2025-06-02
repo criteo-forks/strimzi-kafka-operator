@@ -227,6 +227,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private QuotasPlugin quotas;
     /* test */ KafkaConfiguration configuration;
     private KafkaMetadataConfigurationState kafkaMetadataConfigState;
+    private KafkaClusterSpec kafkaClusterSpec;
 
     /**
      * Warning conditions generated from the Custom Resource
@@ -352,6 +353,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         }
 
         result.configuration = configuration;
+        result.kafkaClusterSpec = kafkaClusterSpec;
 
         // We set the user-configured inter.broker.protocol.version if needed (when not set by the user)
         // In KRaft mode, it should be always null
@@ -419,6 +421,9 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         // Should run at the end when everything is set
         KafkaSpecChecker specChecker = new KafkaSpecChecker(kafkaSpec, versions, result);
         result.warningConditions.addAll(specChecker.run(kafkaMetadataConfigState.isKRaft()));
+
+        result.gcLoggingEnabled = kafkaClusterSpec.getJvmOptions() == null ? JvmOptions.DEFAULT_GC_LOGGING_ENABLED : kafkaClusterSpec.getJvmOptions().isGcLoggingEnabled();
+
 
         return result;
     }
@@ -1365,6 +1370,21 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             CertUtils.createTrustedCertificatesVolumes(volumeList, keycloakAuthz.getTlsTrustedCertificates(), isOpenShift, "authz-keycloak");
         }
 
+        // Add external ZooKeeper certificate volumes if configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls()
+            && kafkaClusterSpec.getExternalZooKeeper().getAuthentication() != null
+            && "tls".equals(kafkaClusterSpec.getExternalZooKeeper().getAuthentication().getType())) {
+            // Add external ZooKeeper client certificate volume
+            AuthenticationUtils.configureClientAuthenticationVolumes(
+                kafkaClusterSpec.getExternalZooKeeper().getAuthentication(),
+                volumeList,
+                "external-zookeeper-certs",
+                isOpenShift
+            );
+        }
+
         return volumeList;
     }
 
@@ -1434,6 +1454,23 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
 
         if (authorization instanceof KafkaAuthorizationKeycloak keycloakAuthz) {
             CertUtils.createTrustedCertificatesVolumeMounts(volumeMountList, keycloakAuthz.getTlsTrustedCertificates(), TRUSTED_CERTS_BASE_VOLUME_MOUNT + "/authz-keycloak-certs/", "authz-keycloak");
+        }
+
+        // Add external ZooKeeper certificate volume mounts if configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls()
+            && kafkaClusterSpec.getExternalZooKeeper().getAuthentication() != null
+            && "tls".equals(kafkaClusterSpec.getExternalZooKeeper().getAuthentication().getType())) {
+            // Add external ZooKeeper client certificate volume mounts
+            AuthenticationUtils.configureClientAuthenticationVolumeMounts(
+                kafkaClusterSpec.getExternalZooKeeper().getAuthentication(),
+                volumeMountList,
+                TRUSTED_CERTS_BASE_VOLUME_MOUNT,
+                "/tmp/kafka/external-zookeeper-password",
+                TRUSTED_CERTS_BASE_VOLUME_MOUNT,
+                "external-zookeeper-certs"
+            );
         }
 
         return volumeMountList;
@@ -1808,7 +1845,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private void withZooKeeperOrKRaftConfiguration(KafkaPool pool, NodeRef node, KafkaBrokerConfigurationBuilder builder) {
         if ((node.broker() && this.kafkaMetadataConfigState.isZooKeeperToMigration()) ||
                 (node.controller() && this.kafkaMetadataConfigState.isPreMigrationToKRaft() && this.kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
-            builder.withZookeeper(cluster);
+            // Pass external ZooKeeper configuration if available, otherwise null for internal ZooKeeper
+            builder.withZookeeper(cluster, kafkaClusterSpec.getExternalZooKeeper());
             LOGGER.debugCr(reconciliation, "Adding ZooKeeper connection configuration on node [{}]", node.podName());
         }
 

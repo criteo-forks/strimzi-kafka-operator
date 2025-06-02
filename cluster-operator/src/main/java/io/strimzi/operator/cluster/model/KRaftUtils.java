@@ -10,6 +10,8 @@ import io.strimzi.api.kafka.model.kafka.KafkaStatus;
 import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.StatusUtils;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -18,6 +20,8 @@ import java.util.Set;
  * Shared methods for working with KRaft
  */
 public class KRaftUtils {
+    private static final Logger LOGGER = LoggerFactory.getLogger(KRaftUtils.class);
+
     /**
      * In KRaft mode, multiple features are currently not supported. This method validates the Kafka CR for the
      * unsupported features and if they are used, throws an InvalidResourceException exception.
@@ -68,9 +72,25 @@ public class KRaftUtils {
         Set<String> errors = new HashSet<>(0);
 
         if (kafkaSpec != null)  {
-            if (kafkaSpec.getZookeeper() == null)   {
-                errors.add("The .spec.zookeeper section of the Kafka custom resource is missing. " +
-                        "This section is required for a ZooKeeper-based cluster.");
+            boolean hasInternalZooKeeper = kafkaSpec.getZookeeper() != null;
+            boolean hasExternalZooKeeper = kafkaSpec.getKafka() != null &&
+                                         kafkaSpec.getKafka().getExternalZooKeeper() != null;
+
+            // Either internal OR external ZooKeeper must be configured, but not both
+            if (!hasInternalZooKeeper && !hasExternalZooKeeper) {
+                errors.add("The .spec.zookeeper section of the Kafka custom resource is missing and no external ZooKeeper is configured. " +
+                        "For a ZooKeeper-based cluster, either configure internal ZooKeeper in .spec.zookeeper or external ZooKeeper in .spec.kafka.externalZooKeeper.");
+            } else if (hasInternalZooKeeper && hasExternalZooKeeper) {
+                errors.add("Both internal ZooKeeper (.spec.zookeeper) and external ZooKeeper (.spec.kafka.externalZooKeeper) are configured. " +
+                        "Please configure only one of them.");
+            }
+
+            // Validate external ZooKeeper configuration if present
+            if (hasExternalZooKeeper) {
+                var externalZk = kafkaSpec.getKafka().getExternalZooKeeper();
+                if (externalZk.getConnect() == null || externalZk.getConnect().trim().isEmpty()) {
+                    errors.add("The .spec.kafka.externalZooKeeper.connect field is required and cannot be empty when using external ZooKeeper.");
+                }
             }
 
             if (!nodePoolsEnabled)  {
@@ -166,6 +186,28 @@ public class KRaftUtils {
                             "are all set to the same value, which must be equal to, or higher than 3.7.0",
                     kafkaVersion, metadataVersion, interBrokerProtocolVersion, logMessageFormatVersion);
             throw new InvalidResourceException(message);
+        }
+    }
+
+    /**
+     * Validates that external ZooKeeper configuration is not used with KRaft
+     *
+     * @param reconciliation    Reconciliation marker
+     * @param kafkaAssembly     The Kafka CR
+     * @param currentNamespace  Current namespace where the ZooKeeper based Kafka cluster is deployed
+     */
+    public static void validateKRaftMigrationWhenUsingExternalZooKeeper(Reconciliation reconciliation, Kafka kafkaAssembly, String currentNamespace) {
+        if (kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null) {
+            if (ProcessRoles.CONTROLLER.isEnabledIn(kafkaAssembly.getSpec().getKafka().getMetadataVersion())
+                && kafkaAssembly.getSpec().getZookeeper() == null) {
+                throw new InvalidResourceException("External ZooKeeper configuration cannot be used in KRaft mode. " +
+                    "KRaft mode requires using internal Kafka controllers instead of ZooKeeper for metadata management. " +
+                    "Please either remove the 'externalZooKeeper' configuration or configure internal ZooKeeper.");
+            }
+
+            LOGGER.infoCr(reconciliation, "Using external ZooKeeper at {} with TLS: {}",
+                kafkaAssembly.getSpec().getKafka().getExternalZooKeeper().getConnect(),
+                kafkaAssembly.getSpec().getKafka().getExternalZooKeeper().getTls());
         }
     }
 }

@@ -21,6 +21,7 @@ import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.api.kafka.model.common.jmx.HasJmxOptions;
 import io.strimzi.api.kafka.model.common.jmx.KafkaJmxOptions;
 import io.strimzi.api.kafka.model.common.metrics.MetricsConfig;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
 import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
 import io.strimzi.api.kafka.model.kafka.quotas.QuotasPlugin;
 import io.strimzi.api.kafka.model.kafka.tieredstorage.TieredStorage;
@@ -50,7 +51,7 @@ import java.util.Map;
 @JsonPropertyOrder({
     "version", "metadataVersion", "replicas", "image", "listeners", "config", "storage", "authorization", "rack",
     "brokerRackInitImage", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
-    "logging", "template", "tieredStorage", "quotas"})
+    "logging", "template", "tieredStorage", "quotas", "externalZooKeeper"})
 @EqualsAndHashCode
 @ToString
 public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurableLogging, HasJmxOptions, HasReadinessProbe, HasLivenessProbe, UnknownPropertyPreserving {
@@ -89,6 +90,7 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
     private KafkaClusterTemplate template;
     private TieredStorage tieredStorage;
     private QuotasPlugin quotas;
+    private ExternalZooKeeperSpec externalZooKeeper;
     private Map<String, Object> additionalProperties;
 
     @Description("The Kafka broker version. Defaults to the latest version. " +
@@ -306,6 +308,16 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
 
     public void setQuotas(QuotasPlugin quotas) {
         this.quotas = quotas;
+    }
+
+    @Description("Configuration for connecting to an external ZooKeeper ensemble instead of deploying a ZooKeeper cluster. " +
+                "When specified, internal Kafka brokers will connect to this external ZooKeeper instead of a Strimzi-managed one.")
+    public ExternalZooKeeperSpec getExternalZooKeeper() {
+        return externalZooKeeper;
+    }
+
+    public void setExternalZooKeeper(ExternalZooKeeperSpec externalZooKeeper) {
+        this.externalZooKeeper = externalZooKeeper;
     }
 
     @Override

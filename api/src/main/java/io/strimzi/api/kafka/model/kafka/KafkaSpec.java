@@ -60,7 +60,8 @@ public class KafkaSpec extends Spec {
         this.kafka = kafka;
     }
 
-    @Description("Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster.")
+    @Description("Configuration of the ZooKeeper cluster. This section is required when running a ZooKeeper-based Apache Kafka cluster, " +
+            "unless an external ZooKeeper ensemble is configured in the kafka.externalZooKeeper section.")
     public ZookeeperClusterSpec getZookeeper() {
         return zookeeper;
     }
