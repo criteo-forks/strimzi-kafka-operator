@@ -81,11 +81,11 @@ public class ExternalZooKeeperTest {
     @Test
     public void testExternalZooKeeperWithTlsAuthentication() {
         KafkaClientAuthenticationTls tlsAuth = new KafkaClientAuthenticationTlsBuilder()
-                .withNewCertAndKey()
-                    .withNewSecretName("zoo-secret")
+                .withCertificateAndKey(new CertAndKeySecretSourceBuilder()
+                    .withSecretName("zoo-secret")
                     .withCertificate("zoo.crt")
                     .withKey("zoo.key")
-                .endCertAndKey()
+                    .build())
                 .build();
 
         Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
