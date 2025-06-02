@@ -40,6 +40,7 @@ import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
 import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.JvmOptions;
 import io.strimzi.api.kafka.model.common.Rack;
 import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
 import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;

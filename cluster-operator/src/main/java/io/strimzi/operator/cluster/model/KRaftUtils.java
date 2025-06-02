@@ -9,11 +9,10 @@ import io.strimzi.api.kafka.model.kafka.KafkaSpec;
 import io.strimzi.api.kafka.model.kafka.KafkaStatus;
 import io.strimzi.api.kafka.model.nodepool.ProcessRoles;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.StatusUtils;
 import org.apache.kafka.server.common.MetadataVersion;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -22,7 +21,7 @@ import java.util.Set;
  * Shared methods for working with KRaft
  */
 public class KRaftUtils {
-    private static final Logger LOGGER = LoggerFactory.getLogger(KRaftUtils.class);
+    private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(KRaftUtils.class.getName());
 
     /**
      * In KRaft mode, multiple features are currently not supported. This method validates the Kafka CR for the
@@ -200,8 +199,20 @@ public class KRaftUtils {
      */
     public static void validateKRaftMigrationWhenUsingExternalZooKeeper(Reconciliation reconciliation, Kafka kafkaAssembly, String currentNamespace) {
         if (kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null) {
-            if (ProcessRoles.CONTROLLER.isEnabledIn(kafkaAssembly.getSpec().getKafka().getMetadataVersion())
-                && kafkaAssembly.getSpec().getZookeeper() == null) {
+            // Check if KRaft mode is enabled by checking if metadata version is >= 3.3-IV0
+            String metadataVersion = kafkaAssembly.getSpec().getKafka().getMetadataVersion();
+            boolean isKRaftEnabled = false;
+            if (metadataVersion != null) {
+                try {
+                    MetadataVersion version = MetadataVersion.fromVersionString(metadataVersion);
+                    isKRaftEnabled = version.isAtLeast(MetadataVersion.IBP_3_3_IV0);
+                } catch (IllegalArgumentException e) {
+                    // Invalid metadata version, assume not KRaft enabled
+                    isKRaftEnabled = false;
+                }
+            }
+
+            if (isKRaftEnabled && kafkaAssembly.getSpec().getZookeeper() == null) {
                 throw new InvalidResourceException("External ZooKeeper configuration cannot be used in KRaft mode. " +
                     "KRaft mode requires using internal Kafka controllers instead of ZooKeeper for metadata management. " +
                     "Please either remove the 'externalZooKeeper' configuration or configure internal ZooKeeper.");
