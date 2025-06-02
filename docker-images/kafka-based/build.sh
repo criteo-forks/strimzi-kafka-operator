@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/bash
+#!/usr/bin/env bash
 set -e
 
 source $(dirname $(realpath $0))/../../tools/kafka-versions-tools.sh
@@ -16,7 +16,7 @@ function dependency_check {
     fi
 
     if [ "${BASH_VERSINFO[0]}" -lt 4 ]
-    then
+    then 
         >&2 echo "You need bash version >= 4 to build Strimzi. Refer to DEV_GUIDE.md for more information"
         exit 1
     fi
@@ -26,7 +26,7 @@ function dependency_check {
 }
 
 # Support for alternate base images
-# if ALTERNATE_BASE is defined, and there is a Dockerfile in the directory,
+# if ALTERNATE_BASE is defined, and there is a Dockerfile in the directory, 
 # use that Dockerfile $1 the component directory
 function alternate_base {
     if [ -n "$ALTERNATE_BASE" ] && [ -f "$1/$ALTERNATE_BASE/Dockerfile" ]; then
@@ -37,11 +37,11 @@ function alternate_base {
 
 function build {
     # This function comes from the tools/kafka-versions-tools.sh script and provides several associative arrays
-    # version_binary_urls, version_checksums and version_libs which map from version string
-    # to source tar url (or file if specified), sha512 checksum for those tar files and third party library
+    # version_binary_urls, version_checksums and version_libs which map from version string 
+    # to source tar url (or file if specified), sha512 checksum for those tar files and third party library 
     # version respectively.
     get_version_maps
-
+    
     local targets=$*
     local tag="${DOCKER_TAG:-latest}"
 

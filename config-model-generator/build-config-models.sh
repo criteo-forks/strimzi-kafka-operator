@@ -1,9 +1,9 @@
-#!/opt/homebrew/bin/bash
+#!/usr/bin/env bash
 set -e
 
 source $(dirname $(realpath $0))/../tools/kafka-versions-tools.sh
 
-# Parse the Kafka versions file and get a list of version strings in an array
+# Parse the Kafka versions file and get a list of version strings in an array 
 # called "versions"
 get_kafka_versions
 
