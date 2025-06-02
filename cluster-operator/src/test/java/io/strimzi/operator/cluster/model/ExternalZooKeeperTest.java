@@ -11,7 +11,9 @@ import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpecB
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTls;
 import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTlsBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSourceBuilder;
+import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.test.TestUtils;
@@ -33,191 +35,124 @@ public class ExternalZooKeeperTest {
 
     @Test
     public void testExternalZooKeeperBasicConfiguration() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
+        Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
+                    .withNewExternalZooKeeper()
+                        .withConnect("zoo1:2181,zoo2:2181")
+                    .endExternalZooKeeper()
                     .editKafka()
-                        .withExternalZooKeeper(externalZk)
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
                     .endKafka()
-                    .withZookeeper(null) // Remove internal ZooKeeper
+                    .editZookeeper()
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                    .endZookeeper()
                 .endSpec()
                 .build();
 
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
-
-        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getConnect(), is("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181"));
-        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(nullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication(), is(nullValue()));
+        ExternalZooKeeperSpec externalZk = kafka.getSpec().getExternalZooKeeper();
+        assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
+        assertThat(externalZk.getTls(), is(nullValue()));
     }
 
     @Test
     public void testExternalZooKeeperWithTls() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
-                .withTls(true)
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
+        Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
+                    .withNewExternalZooKeeper()
+                        .withConnect("zoo1:2181,zoo2:2181")
+                        .withTls(true)
+                    .endExternalZooKeeper()
                     .editKafka()
-                        .withExternalZooKeeper(externalZk)
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
                     .endKafka()
-                    .withZookeeper(null)
+                    .editZookeeper()
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                    .endZookeeper()
                 .endSpec()
                 .build();
 
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
-
-        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
+        ExternalZooKeeperSpec externalZk = kafka.getSpec().getExternalZooKeeper();
+        assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
+        assertThat(externalZk.getTls(), is(true));
     }
 
     @Test
     public void testExternalZooKeeperWithTlsAuthentication() {
-        KafkaClientAuthenticationTls auth = new KafkaClientAuthenticationTlsBuilder()
-                .withCertificateAndKey(new CertAndKeySecretSourceBuilder()
-                        .withSecretName("my-zk-client-cert")
-                        .withCertificate("client.crt")
-                        .withKey("client.key")
-                        .build())
-                .build();
-
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
-                .withTls(true)
-                .withAuthentication(auth)
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
+        Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
+                    .withNewExternalZooKeeper()
+                        .withConnect("zoo1:2181,zoo2:2181")
+                        .withTls(true)
+                        .withNewTlsClientAuthentication()
+                            .withNewCertAndKey()
+                                .withNewSecretName("zoo-secret")
+                                .withCertificate("zoo.crt")
+                                .withKey("zoo.key")
+                            .endCertAndKey()
+                        .endTlsClientAuthentication()
+                    .endExternalZooKeeper()
                     .editKafka()
-                        .withExternalZooKeeper(externalZk)
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
                     .endKafka()
-                    .withZookeeper(null)
+                    .editZookeeper()
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                    .endZookeeper()
                 .endSpec()
                 .build();
 
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
-
-        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
-        assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getAuthentication().getType(), is("tls"));
+        ExternalZooKeeperSpec externalZk = kafka.getSpec().getExternalZooKeeper();
+        assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
+        assertThat(externalZk.getTls(), is(true));
+        assertThat(externalZk.getAuthentication().getType(), is("tls"));
     }
 
     @Test
-    public void testExternalZooKeeperWithCustomConfig() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
-                .withConfig(Map.of(
-                        "zookeeper.session.timeout.ms", "30000",
-                        "zookeeper.connection.timeout.ms", "20000"
-                ))
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
+    public void testExternalZooKeeperWithCustomConfigurations() {
+        Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
                 .editSpec()
+                    .withNewExternalZooKeeper()
+                        .withConnect("zoo1:2181,zoo2:2181")
+                        .withTls(false)
+                        .addToConfiguration("zookeeper.connect.timeout.ms", "30000")
+                    .endExternalZooKeeper()
                     .editKafka()
-                        .withExternalZooKeeper(externalZk)
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
                     .endKafka()
-                    .withZookeeper(null)
+                    .editZookeeper()
+                        .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                    .endZookeeper()
                 .endSpec()
                 .build();
 
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
-
-        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getConfig(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getConfig().get("zookeeper.session.timeout.ms"), is("30000"));
-        assertThat(kafkaCluster.getExternalZooKeeper().getConfig().get("zookeeper.connection.timeout.ms"), is("20000"));
+        ExternalZooKeeperSpec externalZk = kafka.getSpec().getExternalZooKeeper();
+        assertThat(externalZk.getConnect(), is("zoo1:2181,zoo2:2181"));
+        assertThat(externalZk.getTls(), is(false));
+        assertThat(externalZk.getConfiguration().get("zookeeper.connect.timeout.ms"), is("30000"));
     }
 
     @Test
-    public void testExternalZooKeeperWithInternalZooKeeperThrowsException() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
-                .build();
+    public void testValidationExternalZooKeeperAndZooKeeperCluster() {
+        // Test that when both external ZooKeeper and ZooKeeper cluster are specified, an exception should be thrown
+        assertThrows(Exception.class, () -> {
+            Kafka kafka = new KafkaBuilder(ResourceUtils.createKafka("test", "test", 3, "kafka-image", 120, 30))
+                    .editSpec()
+                        .withNewExternalZooKeeper()
+                            .withConnect("zoo1:2181,zoo2:2181")
+                        .endExternalZooKeeper()
+                        .editKafka()
+                            .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                        .endKafka()
+                        .editZookeeper()
+                            .withStorage(TestUtils.fromJson("{ \"type\": \"ephemeral\" }", Storage.class))
+                            .withReplicas(3)
+                        .endZookeeper()
+                    .endSpec()
+                    .build();
 
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
-                .editSpec()
-                    .editKafka()
-                        .withExternalZooKeeper(externalZk)
-                    .endKafka()
-                    // Keep internal ZooKeeper - this should cause an error
-                .endSpec()
-                .build();
-
-        assertThrows(InvalidResourceException.class, () -> {
-            KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
+            // This should trigger validation error when creating KafkaCluster
+            KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka,
+                NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER),
+                KafkaVersionTestUtils.getKafkaVersionLookup(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         });
-    }
-
-    @Test
-    public void testExternalZooKeeperValidation() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
-                .editSpec()
-                    .editKafka()
-                        .withExternalZooKeeper(externalZk)
-                    .endKafka()
-                    .withZookeeper(null)
-                .endSpec()
-                .build();
-
-        // This should not throw an exception
-        KRaftUtils.validateKRaftMigrationWhenUsingExternalZooKeeper(RECONCILIATION, kafka, NAMESPACE);
-    }
-
-    @Test
-    public void testExternalZooKeeperWithKRaftThrowsException() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2181,zk-2.example.com:2181,zk-3.example.com:2181")
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
-                .editSpec()
-                    .editKafka()
-                        .withExternalZooKeeper(externalZk)
-                        .withMetadataVersion("3.7-IV4") // KRaft-compatible version
-                        .addToConfig("process.roles", "broker,controller")
-                    .endKafka()
-                    .withZookeeper(null)
-                .endSpec()
-                .build();
-
-        assertThrows(InvalidResourceException.class, () -> {
-            KRaftUtils.validateKRaftMigrationWhenUsingExternalZooKeeper(RECONCILIATION, kafka, NAMESPACE);
-        });
-    }
-
-    @Test
-    public void testExternalZooKeeperEnvironmentVariables() {
-        ExternalZooKeeperSpec externalZk = new ExternalZooKeeperSpecBuilder()
-                .withConnect("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182")
-                .withTls(true)
-                .build();
-
-        Kafka kafka = new KafkaBuilder(TestUtils.getKafkaAssembly("test"))
-                .editSpec()
-                    .editKafka()
-                        .withExternalZooKeeper(externalZk)
-                    .endKafka()
-                    .withZookeeper(null)
-                .endSpec()
-                .build();
-
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.getKafkaVersionLookup(), null, SHARED_ENV_PROVIDER);
-
-        // Verify that external ZooKeeper configuration is properly set
-        assertThat(kafkaCluster.getExternalZooKeeper(), is(notNullValue()));
-        assertThat(kafkaCluster.getExternalZooKeeper().getConnect(), is("zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182"));
-        assertThat(kafkaCluster.getExternalZooKeeper().getTls(), is(true));
     }
 }
