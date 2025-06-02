@@ -14,7 +14,6 @@ import io.strimzi.api.kafka.model.common.CertAndKeySecretSourceBuilder;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.InvalidResourceException;
-import io.strimzi.operator.common.model.SharedEnvironmentProvider;
 import io.strimzi.test.TestUtils;
 import org.junit.jupiter.api.Test;
 
