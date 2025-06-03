@@ -39,16 +39,17 @@ fi
 export LOG_DIR="$KAFKA_HOME"
 
 # Generate temporary keystore password
-CERTS_STORE_PASSWORD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c32)
-export CERTS_STORE_PASSWORD
+export CERTS_STORE_PASSWORD=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c32)
 
 mkdir -p /tmp/kafka
 
 # Import certificates into keystore and truststore
 ./kafka_tls_prepare_certificates.sh
 
-# Prepare external ZooKeeper certificates if configured
-./external_zookeeper_tls_prepare_certificates.sh
+# Prepare external ZooKeeper TLS certificates if external ZooKeeper with TLS is configured
+if [ "${EXTERNAL_ZOOKEEPER_TLS:-false}" = "true" ]; then
+    ./external_zookeeper_tls_prepare_certificates.sh
+fi
 
 # Generate and print the config file
 echo "Starting Kafka with configuration:"

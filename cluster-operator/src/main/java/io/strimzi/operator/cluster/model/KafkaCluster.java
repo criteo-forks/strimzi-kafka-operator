@@ -40,7 +40,6 @@ import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
 import io.strimzi.api.kafka.model.common.Condition;
-import io.strimzi.api.kafka.model.common.JvmOptions;
 import io.strimzi.api.kafka.model.common.Rack;
 import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
 import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
@@ -1588,6 +1587,12 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         JvmOptionUtils.heapOptions(varList, 50, 5L * 1024L * 1024L * 1024L, pool.jvmOptions, pool.resources);
         JvmOptionUtils.jvmPerformanceOptions(varList, pool.jvmOptions);
         JvmOptionUtils.jvmSystemProperties(varList, pool.jvmOptions);
+
+        // Add external ZooKeeper environment variables if external ZooKeeper is configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null) {
+            varList.add(ContainerUtils.createEnvVar("EXTERNAL_ZOOKEEPER_CONNECT", kafkaClusterSpec.getExternalZooKeeper().getConnect()));
+            varList.add(ContainerUtils.createEnvVar("EXTERNAL_ZOOKEEPER_TLS", String.valueOf(kafkaClusterSpec.getExternalZooKeeper().getTls() != null && kafkaClusterSpec.getExternalZooKeeper().getTls())));
+        }
 
         for (GenericKafkaListener listener : listeners) {
             if (isListenerWithOAuth(listener))   {
