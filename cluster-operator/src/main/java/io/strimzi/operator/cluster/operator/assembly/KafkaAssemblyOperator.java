@@ -271,7 +271,7 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                 .compose(state -> shouldSkipZooKeeperReconciliation(kafkaMetadataConfigState, reconcileState.kafkaAssembly) ? Future.succeededFuture(state) : state.reconcileZooKeeper(clock))
                 .compose(state -> reconcileState.kafkaMetadataStateManager.shouldDestroyZooKeeperNodes() ? state.reconcileZooKeeperEraser() : Future.succeededFuture(state))
                 .compose(state -> state.reconcileKafka(clock))
-                .compose(state -> state.reconcileEntityOperator(clock))
+                .compose(state -> shouldSkipEntityOperatorReconciliation(reconcileState.kafkaAssembly) ? Future.succeededFuture(state) : state.reconcileEntityOperator(clock))
                 .compose(state -> state.reconcileCruiseControl(clock))
                 .compose(state -> state.reconcileKafkaExporter(clock))
 
@@ -949,5 +949,12 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
         return kafkaMetadataConfigState.isKRaft() ||
                (kafkaAssembly.getSpec().getKafka() != null &&
                 kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null);
+    }
+
+    private boolean shouldSkipEntityOperatorReconciliation(Kafka kafkaAssembly) {
+        // Skip Entity Operator reconciliation if:
+        // 1. External ZooKeeper is configured (kafka.externalZooKeeper is present)
+        return kafkaAssembly.getSpec().getKafka() != null &&
+               kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null;
     }
 }
