@@ -453,7 +453,7 @@ public class KafkaReconciler {
             boolean allowReconfiguration
     ) {
         // Detect if external ZooKeeper is configured
-        boolean isExternalZooKeeper = kafka.kafkaClusterSpec.getExternalZooKeeper() != null;
+        boolean isExternalZooKeeper = kafka.getExternalZooKeeper() != null;
 
         return new KafkaRoller(
                     reconciliation,

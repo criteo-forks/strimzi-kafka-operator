@@ -87,6 +87,7 @@ import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.model.StatusUtils;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -2044,5 +2045,14 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         } else {
             return labels.strimziSelectorLabels();
         }
+    }
+
+    /**
+     * Returns the external ZooKeeper configuration if configured, null otherwise.
+     *
+     * @return External ZooKeeper specification or null
+     */
+    public ExternalZooKeeperSpec getExternalZooKeeper() {
+        return kafkaClusterSpec != null ? kafkaClusterSpec.getExternalZooKeeper() : null;
     }
 }
