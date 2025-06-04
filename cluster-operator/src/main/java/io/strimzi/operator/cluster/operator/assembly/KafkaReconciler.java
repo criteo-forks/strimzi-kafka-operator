@@ -898,6 +898,12 @@ public class KafkaReconciler {
      * @return  Future which completes when the Cluster ID is retrieved and set in the status
      */
     protected Future<Void> clusterId(KafkaStatus kafkaStatus) {
+        // Skip cluster ID retrieval for external ZooKeeper setups
+        if (kafka.getExternalZooKeeper() != null) {
+            LOGGER.debugCr(reconciliation, "Skipping clusterId retrieval for external ZooKeeper configuration");
+            return Future.succeededFuture();
+        }
+
         LOGGER.debugCr(reconciliation, "Attempt to get clusterId");
         return vertx.createSharedWorkerExecutor("kubernetes-ops-pool")
                 .executeBlocking(() -> {
@@ -930,6 +936,12 @@ public class KafkaReconciler {
      * @return  Future which completes when the default quotas are configured
      */
     protected Future<Void> defaultKafkaQuotas() {
+        // Skip quota configuration for external ZooKeeper setups
+        if (kafka.getExternalZooKeeper() != null) {
+            LOGGER.debugCr(reconciliation, "Skipping default Kafka quotas configuration for external ZooKeeper setup");
+            return Future.succeededFuture();
+        }
+
         return DefaultKafkaQuotasManager.reconcileDefaultUserQuotas(reconciliation, vertx, adminClientProvider, this.coTlsPemIdentity.pemTrustSet(), this.coTlsPemIdentity.pemAuthIdentity(), kafka.quotas());
     }
 
