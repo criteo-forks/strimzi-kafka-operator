@@ -871,6 +871,7 @@ public class KafkaRollerTest {
                     "",
                     KafkaVersionTestUtils.getLatestVersion(),
                     true,
+                    false,
                     mock(KubernetesRestartEventPublisher.class));
             this.delegateControllerCall = delegateControllerCall;
             this.delegateAdminClientCall = delegateAdminClientCall;
