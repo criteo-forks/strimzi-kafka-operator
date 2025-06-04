@@ -452,6 +452,9 @@ public class KafkaReconciler {
             Map<Integer, Map<String, String>> kafkaAdvertisedPorts,
             boolean allowReconfiguration
     ) {
+        // Detect if external ZooKeeper is configured
+        boolean isExternalZooKeeper = kafka.getKafkaClusterSpec().getExternalZooKeeper() != null;
+
         return new KafkaRoller(
                     reconciliation,
                     vertx,
@@ -467,7 +470,8 @@ public class KafkaReconciler {
                     logging,
                     kafka.getKafkaVersion(),
                     allowReconfiguration,
-                    eventsPublisher
+                    eventsPublisher,
+                    isExternalZooKeeper
             ).rollingRestart(podNeedsRestart);
     }
 

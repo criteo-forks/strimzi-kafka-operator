@@ -129,6 +129,7 @@ public class KafkaRoller {
     private final KafkaVersion kafkaVersion;
     private final Reconciliation reconciliation;
     private final boolean allowReconfiguration;
+    private final boolean isExternalZooKeeper;
     /**
      * Admin client used to send requests that are only relevant for the brokers. It is bootstrapped with broker nodes that might be rolled.
      */
@@ -157,12 +158,13 @@ public class KafkaRoller {
      * @param kafkaLogging              Kafka logging configuration
      * @param kafkaVersion              Kafka version
      * @param allowReconfiguration      Flag indicting whether reconfiguration is allowed or not
+     * @param isExternalZooKeeper       Flag indicating whether external ZooKeeper is configured (skips availability checks)
      * @param eventsPublisher           Kubernetes Events publisher for publishing events about pod restarts
      */
     public KafkaRoller(Reconciliation reconciliation, Vertx vertx, PodOperator podOperations,
                        long pollingIntervalMs, long operationTimeoutMs, Supplier<BackOff> backOffSupplier, Set<NodeRef> nodes,
                        TlsPemIdentity coTlsPemIdentity, AdminClientProvider adminClientProvider, KafkaAgentClientProvider kafkaAgentClientProvider,
-                       Function<Integer, String> kafkaConfigProvider, String kafkaLogging, KafkaVersion kafkaVersion, boolean allowReconfiguration, KubernetesRestartEventPublisher eventsPublisher) {
+                       Function<Integer, String> kafkaConfigProvider, String kafkaLogging, KafkaVersion kafkaVersion, boolean allowReconfiguration, boolean isExternalZooKeeper, KubernetesRestartEventPublisher eventsPublisher) {
         this.namespace = reconciliation.namespace();
         this.cluster = reconciliation.name();
         this.nodes = nodes;
@@ -183,6 +185,7 @@ public class KafkaRoller {
         this.kafkaVersion = kafkaVersion;
         this.reconciliation = reconciliation;
         this.allowReconfiguration = allowReconfiguration;
+        this.isExternalZooKeeper = isExternalZooKeeper;
     }
 
     /**
@@ -204,6 +207,12 @@ public class KafkaRoller {
      * @return true if the creation of AC succeeded, false otherwise
      */
     private boolean maybeInitBrokerAdminClient() {
+        // Skip AdminClient initialization when using external ZooKeeper
+        if (isExternalZooKeeper) {
+            LOGGER.debugCr(reconciliation, "Skipping broker AdminClient initialization due to external ZooKeeper configuration");
+            return true; // Return true to indicate success without actually creating the client
+        }
+
         if (this.brokerAdminClient == null) {
             try {
                 this.brokerAdminClient = adminClient(nodes.stream().filter(NodeRef::broker).collect(Collectors.toSet()), false);
@@ -220,6 +229,12 @@ public class KafkaRoller {
      * @return true if the creation of AC succeeded, false otherwise
      */
     private boolean maybeInitControllerAdminClient() {
+        // Skip AdminClient initialization when using external ZooKeeper
+        if (isExternalZooKeeper) {
+            LOGGER.debugCr(reconciliation, "Skipping controller AdminClient initialization due to external ZooKeeper configuration");
+            return true; // Return true to indicate success without actually creating the client
+        }
+
         if (this.controllerAdminClient == null) {
             try {
                 // TODO: Currently, when running in KRaft mode Kafka does not support using Kafka Admin API with controller
@@ -561,6 +576,12 @@ public class KafkaRoller {
     private boolean maybeDynamicUpdateBrokerConfig(NodeRef nodeRef, RestartContext restartContext) throws InterruptedException {
         boolean updatedDynamically;
 
+        // Skip dynamic updates when using external ZooKeeper
+        if (isExternalZooKeeper) {
+            LOGGER.debugCr(reconciliation, "Skipping dynamic broker config update for node {} due to external ZooKeeper configuration", nodeRef);
+            return false;
+        }
+
         if (restartContext.needsReconfig) {
             try {
                 dynamicUpdateBrokerConfig(nodeRef, brokerAdminClient, restartContext.brokerConfigDiff, restartContext.brokerLoggingDiff);
@@ -607,6 +628,19 @@ public class KafkaRoller {
             LOGGER.infoCr(reconciliation, "Pod {} needs to be restarted, because it seems to be stuck and restart might help", nodeRef);
             restartContext.restartReasons.add(RestartReason.POD_STUCK);
             markRestartContextWithForceRestart(restartContext);
+            return;
+        }
+
+        // Skip AdminClient operations when using external ZooKeeper
+        if (isExternalZooKeeper) {
+            LOGGER.debugCr(reconciliation, "Skipping broker/controller AdminClient operations for node {} due to external ZooKeeper configuration", nodeRef);
+            boolean needsRestart = reasonToRestartPod.shouldRestart();
+
+            restartContext.needsRestart = needsRestart;
+            restartContext.needsReconfig = false; // Skip dynamic reconfiguration with external ZooKeeper
+            restartContext.forceRestart = false;
+            restartContext.brokerConfigDiff = null;
+            restartContext.brokerLoggingDiff = null;
             return;
         }
 
@@ -810,6 +844,13 @@ public class KafkaRoller {
 
     private boolean canRoll(int nodeId, boolean isController, boolean isBroker, long timeout, TimeUnit unit, boolean ignoreSslError, RestartContext restartContext)
             throws ForceableProblem, InterruptedException, UnforceableProblem {
+
+        // Skip availability checks when using external ZooKeeper - the external system manages availability
+        if (isExternalZooKeeper) {
+            LOGGER.infoCr(reconciliation, "Skipping availability checks for node {} due to external ZooKeeper configuration", nodeId);
+            return true;
+        }
+
         try {
             if (isBroker && isController) {
                 boolean canRollController = await(restartContext.quorumCheck.canRollController(nodeId), timeout, unit,
@@ -946,7 +987,7 @@ public class KafkaRoller {
     /* test */ KafkaAvailability availability(Admin ac) {
         return new KafkaAvailability(reconciliation, ac);
     }
-    
+
     /**
      * Return true if the given {@code nodeId} is the controller or the active controller in KRaft case and there are other brokers we might yet have to consider.
      * This ensures that the active controller is restarted/reconfigured last.
@@ -1052,4 +1093,3 @@ public class KafkaRoller {
             });
     }
 }
-
