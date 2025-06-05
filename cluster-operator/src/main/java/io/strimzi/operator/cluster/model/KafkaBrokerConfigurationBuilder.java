@@ -12,6 +12,7 @@ import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationCustom;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationKeycloak;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationOpa;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationSimple;
+import io.strimzi.api.kafka.model.kafka.KafkaConfiguration;
 import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.api.kafka.model.kafka.cruisecontrol.CruiseControlResources;
 import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
@@ -21,6 +22,7 @@ import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationCust
 import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationOAuth;
 import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationScramSha512;
 import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationTls;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
 import io.strimzi.api.kafka.model.kafka.quotas.QuotasPlugin;
 import io.strimzi.api.kafka.model.kafka.quotas.QuotasPluginKafka;
 import io.strimzi.api.kafka.model.kafka.quotas.QuotasPluginStrimzi;
@@ -315,11 +317,36 @@ public class KafkaBrokerConfigurationBuilder {
             Function<String, String> advertisedHostnameProvider,
             Function<String, String> advertisedPortProvider
     )  {
+        return withListeners(clusterName, namespace, kafkaListeners, advertisedHostnameProvider, advertisedPortProvider, null);
+    }
+
+    /**
+     * Method to configure listeners with external ZooKeeper support.
+     *
+     * @param clusterName The name of the Kafka cluster
+     * @param namespace Kubernetes namespace
+     * @param kafkaListeners List of user-defined listeners
+     * @param advertisedHostnameProvider Function to provide advertised hostnames
+     * @param advertisedPortProvider Function to provide advertised ports
+     * @param externalZooKeeper External ZooKeeper configuration (null if using internal ZooKeeper)
+     *
+     * @return Returns the builder instance
+     */
+    @SuppressWarnings({"checkstyle:CyclomaticComplexity"})
+    public KafkaBrokerConfigurationBuilder withListeners(
+            String clusterName,
+            String namespace,
+            List<GenericKafkaListener> kafkaListeners,
+            Function<String, String> advertisedHostnameProvider,
+            Function<String, String> advertisedPortProvider,
+            ExternalZooKeeperSpec externalZooKeeper
+    )  {
         List<String> listeners = new ArrayList<>();
         List<String> advertisedListeners = new ArrayList<>();
         List<String> securityProtocol = new ArrayList<>();
 
         boolean isKraftControllerOnly = node.controller() && !node.broker();
+        boolean isExternalZooKeeper = externalZooKeeper != null;
 
         // Control Plane listener is set for pure KRaft controller or combined node, and broker in ZooKeeper mode or in migration state but not when full KRaft.
         if (node.controller() || (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration())) {
@@ -354,13 +381,17 @@ public class KafkaBrokerConfigurationBuilder {
 
         // Non-controller listeners are used only on ZooKeeper based brokers or KRaft brokers (including mixed nodes)
         if (!isKraftControllerOnly) {
-            // Replication listener
-            listeners.add(REPLICATION_LISTENER_NAME + "://0.0.0.0:9091");
-            advertisedListeners.add(String.format("%s://%s:9091",
-                    REPLICATION_LISTENER_NAME,
-                    // Pod name constructed to be templatable for each individual ordinal
-                    DnsNameGenerator.podDnsNameWithoutClusterDomain(namespace, KafkaResources.brokersServiceName(clusterName), node.podName())
-            ));
+            // For External ZooKeeper, skip automatic replication listener creation
+            // Users must explicitly define all listeners including replication listener
+            if (!isExternalZooKeeper) {
+                // Replication listener - only created automatically for internal ZooKeeper
+                listeners.add(REPLICATION_LISTENER_NAME + "://0.0.0.0:9091");
+                advertisedListeners.add(String.format("%s://%s:9091",
+                        REPLICATION_LISTENER_NAME,
+                        // Pod name constructed to be templatable for each individual ordinal
+                        DnsNameGenerator.podDnsNameWithoutClusterDomain(namespace, KafkaResources.brokersServiceName(clusterName), node.podName())
+                ));
+            }
 
             for (GenericKafkaListener listener : kafkaListeners) {
                 int port = listener.getPort();
@@ -397,10 +428,29 @@ public class KafkaBrokerConfigurationBuilder {
         // Advertised listeners are not allowed on KRaft nodes with controller only role
         if (!isKraftControllerOnly) {
             writer.println("advertised.listeners=" + String.join(",", advertisedListeners));
-            writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
+
+            // Configure inter.broker.listener.name
+            if (!isExternalZooKeeper) {
+                // For internal ZooKeeper, use the automatic replication listener
+                writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
+            } else {
+                // For external ZooKeeper, use the first internal listener for inter-broker communication
+                String interBrokerListenerName = findInterBrokerListenerName(kafkaListeners);
+                if (interBrokerListenerName != null) {
+                    writer.println("inter.broker.listener.name=" + interBrokerListenerName);
+                }
+            }
         } else if (node.controller() && kafkaMetadataConfigState.isZooKeeperToPostMigration()) {
             // needed for KRaft controller only as well until post-migration because it needs to contact brokers
-            writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
+            if (!isExternalZooKeeper) {
+                writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
+            } else {
+                // For external ZooKeeper, use the first internal listener for inter-broker communication
+                String interBrokerListenerName = findInterBrokerListenerName(kafkaListeners);
+                if (interBrokerListenerName != null) {
+                    writer.println("inter.broker.listener.name=" + interBrokerListenerName);
+                }
+            }
         }
 
         // Control plane listener is on all ZooKeeper based brokers, needed during migration as well, when broker still using ZooKeeper but KRaft controllers are ready
@@ -1073,5 +1123,23 @@ public class KafkaBrokerConfigurationBuilder {
      */
     public KafkaBrokerConfigurationBuilder withZookeeper(String clusterName)  {
         return withZookeeper(clusterName, null);
+    }
+
+    /**
+     * Finds the first suitable internal listener to use for inter-broker communication
+     * when using external ZooKeeper.
+     *
+     * @param kafkaListeners List of user-defined listeners
+     * @return The listener name/identifier to use for inter-broker communication, or null if none found
+     */
+    private String findInterBrokerListenerName(List<GenericKafkaListener> kafkaListeners) {
+        for (GenericKafkaListener listener : kafkaListeners) {
+            // Use the first internal listener for inter-broker communication
+            // Internal listeners are most suitable for secure inter-broker communication
+            if (listener.getType() == KafkaListenerType.INTERNAL) {
+                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
+            }
+        }
+        return null;
     }
 }

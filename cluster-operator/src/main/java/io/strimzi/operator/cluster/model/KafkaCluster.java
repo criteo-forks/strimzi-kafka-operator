@@ -385,7 +385,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             throw new InvalidResourceException("The required field .spec.kafka.listeners is missing");
         }
         List<GenericKafkaListener> listeners = kafkaClusterSpec.getListeners();
-        ListenersValidator.validate(reconciliation, result.brokerNodes(), listeners);
+        ListenersValidator.validate(reconciliation, result.brokerNodes(), listeners, kafkaClusterSpec.getExternalZooKeeper());
         result.listeners = listeners;
 
         // Set authorization
@@ -1810,7 +1810,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                                 namespace,
                                 listeners,
                                 listenerId -> advertisedHostnames.get(node.nodeId()).get(listenerId),
-                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId)
+                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId),
+                                kafkaClusterSpec.getExternalZooKeeper()
                         )
                         .withAuthorization(cluster, authorization)
                         .withCruiseControl(cluster, ccMetricsReporter, node.broker())
