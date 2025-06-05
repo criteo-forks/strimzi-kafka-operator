@@ -1171,20 +1171,43 @@ public class KafkaBrokerConfigurationBuilder {
     }
 
     /**
-     * Finds the first suitable internal listener to use for inter-broker communication
-     * when using external ZooKeeper.
+     * Finds the first suitable listener to use for inter-broker communication
+     * when using external ZooKeeper. This method prioritizes listeners in the following order:
+     * 1. Internal listeners (preferred for security)
+     * 2. TLS-enabled listeners (for security)
+     * 3. SASL-enabled listeners (for authentication)
+     * 4. First available listener (fallback)
      *
      * @param kafkaListeners List of user-defined listeners
      * @return The listener name/identifier to use for inter-broker communication, or null if none found
      */
     private String findInterBrokerListenerName(List<GenericKafkaListener> kafkaListeners) {
+        if (kafkaListeners == null || kafkaListeners.isEmpty()) {
+            return null;
+        }
+
+        // Priority 1: Look for internal listeners first (most secure for inter-broker communication)
         for (GenericKafkaListener listener : kafkaListeners) {
-            // Use the first internal listener for inter-broker communication
-            // Internal listeners are most suitable for secure inter-broker communication
             if (listener.getType() == KafkaListenerType.INTERNAL) {
                 return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
             }
         }
-        return null;
+
+        // Priority 2: Look for TLS-enabled listeners (secure communication)
+        for (GenericKafkaListener listener : kafkaListeners) {
+            if (listener.isTls()) {
+                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
+            }
+        }
+
+        // Priority 3: Look for SASL-enabled listeners (authenticated communication)
+        for (GenericKafkaListener listener : kafkaListeners) {
+            if (listener.getAuth() != null) {
+                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
+            }
+        }
+
+        // Priority 4: Use the first available listener as fallback
+        return ListenersUtils.identifier(kafkaListeners.get(0)).toUpperCase(Locale.ENGLISH);
     }
 }
