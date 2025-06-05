@@ -13,8 +13,6 @@ import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.DescriptionFile;
 import io.strimzi.crdgenerator.annotations.KubeLink;
-import io.strimzi.crdgenerator.annotations.Minimum;
-import io.strimzi.crdgenerator.annotations.Pattern;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -36,9 +34,6 @@ import java.util.Map;
 @EqualsAndHashCode
 @ToString
 public class GenericKafkaListener implements UnknownPropertyPreserving {
-    // maximal port name length is 15. The prefix of generic port name is 'tcp-'
-    public final static String LISTENER_NAME_REGEX = "^[a-z0-9]{1,11}$";
-
     private String name;
     private int port;
     private KafkaListenerType type;
@@ -50,10 +45,8 @@ public class GenericKafkaListener implements UnknownPropertyPreserving {
 
     @Description("Name of the listener. " +
             "The name will be used to identify the listener and the related Kubernetes objects. " +
-            "The name has to be unique within given a Kafka cluster. " +
-            "The name can consist of lowercase characters and numbers and be up to 11 characters long.")
+            "The name has to be unique within given a Kafka cluster.")
     @JsonProperty(required = true)
-    @Pattern(LISTENER_NAME_REGEX)
     public String getName() {
         return name;
     }
@@ -64,10 +57,8 @@ public class GenericKafkaListener implements UnknownPropertyPreserving {
 
     @Description("Port number used by the listener inside Kafka. " +
             "The port number has to be unique within a given Kafka cluster. " +
-            "Allowed port numbers are 9092 and higher with the exception of ports 9404 and 9999, which are already used for Prometheus and JMX. " +
             "Depending on the listener type, the port number might not be the same as the port number that connects Kafka clients.")
     @JsonProperty(required = true)
-    @Minimum(9092)
     public int getPort() {
         return port;
     }
