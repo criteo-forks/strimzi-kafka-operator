@@ -32,7 +32,7 @@ import static io.strimzi.operator.cluster.model.ListenersUtils.isListenerWithOAu
  */
 public class ListenersValidator {
     protected static final ReconciliationLogger LOGGER = ReconciliationLogger.create(ListenersValidator.class.getName());
-    private final static Pattern LISTENER_NAME_PATTERN = Pattern.compile(GenericKafkaListener.LISTENER_NAME_REGEX);
+    private final static Pattern LISTENER_NAME_PATTERN = Pattern.compile("^[a-z0-9]{1,11}$");
     private final static List<Integer> FORBIDDEN_PORTS = List.of(9404, 9999);
     private final static int LOWEST_ALLOWED_PORT_NUMBER = 9092;
 
@@ -79,7 +79,7 @@ public class ListenersValidator {
         if (externalZooKeeper == null) {
             List<String> invalidNames = names.stream().filter(name -> !LISTENER_NAME_PATTERN.matcher(name).matches()).toList();
             if (!invalidNames.isEmpty())    {
-                errors.add("listener names " + invalidNames + " are invalid and do not match the pattern " + GenericKafkaListener.LISTENER_NAME_REGEX);
+                errors.add("listener names " + invalidNames + " are invalid and do not match the pattern ^[a-z0-9]{1,11}$");
             }
         }
 
