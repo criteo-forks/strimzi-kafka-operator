@@ -1180,7 +1180,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                             namespace,
                             pool.labels.withStrimziBrokerRole(node.broker()).withStrimziControllerRole(node.controller()),
                             pool.componentName,
-                            componentName,
+                            pool.getServiceAccountName() != null ? pool.getServiceAccountName() : componentName,
                             pool.templatePod,
                             DEFAULT_POD_LABELS,
                             podAnnotationsProvider.apply(node.nodeId()),
@@ -2074,8 +2074,14 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             }
         }
 
-        // Check all node pool templates
+        // Check all node pool templates and direct serviceAccountName fields
         for (KafkaPool pool : nodePools) {
+            // Check direct serviceAccountName field in the KafkaNodePool spec
+            if (pool.getServiceAccountName() != null) {
+                return true;
+            }
+
+            // Check pod template serviceAccountName
             if (pool.templatePod != null && pool.templatePod.getServiceAccountName() != null) {
                 return true;
             }

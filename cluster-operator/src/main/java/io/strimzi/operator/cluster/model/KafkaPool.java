@@ -53,6 +53,11 @@ public class KafkaPool extends AbstractModel {
     protected Storage storage;
 
     /**
+     * Service account name for the pods in this pool. If not set, the default service account for the cluster will be used.
+     */
+    protected String serviceAccountName;
+
+    /**
      * Process roles the nodes in this pool will take. This field is set in the fromCrd method, here it is only
      * set to null to avoid spotbugs complains. For KRaft based cluster, the nodes in this pool might be brokers,
      * controllers or both. For ZooKeeper based clusters, nodes can be only brokers.
@@ -153,6 +158,7 @@ public class KafkaPool extends AbstractModel {
         result.jvmOptions = pool.getSpec().getJvmOptions() != null ? pool.getSpec().getJvmOptions() : kafka.getSpec().getKafka().getJvmOptions();
         result.resources = pool.getSpec().getResources() != null ? pool.getSpec().getResources() : kafka.getSpec().getKafka().getResources();
         result.processRoles = new HashSet<>(pool.getSpec().getRoles());
+        result.serviceAccountName = pool.getSpec().getServiceAccountName();
 
         if (oldStorage != null) {
             Storage newStorage = pool.getSpec().getStorage();
@@ -332,5 +338,12 @@ public class KafkaPool extends AbstractModel {
      */
     public Set<Integer> usedToBeBrokerNodes() {
         return idAssignment.usedToBeBroker();
+    }
+
+    /**
+     * @return  The service account name for the pods in this pool, or null if not set
+     */
+    public String getServiceAccountName() {
+        return serviceAccountName;
     }
 }
