@@ -32,7 +32,9 @@ import static io.strimzi.operator.cluster.model.ListenersUtils.isListenerWithOAu
  */
 public class ListenersValidator {
     protected static final ReconciliationLogger LOGGER = ReconciliationLogger.create(ListenersValidator.class.getName());
+    // More permissive pattern for external ZooKeeper: allow longer names but keep safe characters
     private final static Pattern LISTENER_NAME_PATTERN = Pattern.compile("^[a-z0-9]{1,11}$");
+    private final static Pattern EXTERNAL_ZK_LISTENER_NAME_PATTERN = Pattern.compile("^[a-z0-9_]{1,20}$");
     private final static List<Integer> FORBIDDEN_PORTS = List.of(9404, 9999);
     private final static int LOWEST_ALLOWED_PORT_NUMBER = 9092;
 
@@ -75,11 +77,17 @@ public class ListenersValidator {
             errors.add("every listener needs to have a unique name");
         }
 
-        // Only validate listener name patterns when NOT using external ZooKeeper
+        // Validate listener name patterns - use different rules for external ZooKeeper
         if (externalZooKeeper == null) {
             List<String> invalidNames = names.stream().filter(name -> !LISTENER_NAME_PATTERN.matcher(name).matches()).toList();
             if (!invalidNames.isEmpty())    {
                 errors.add("listener names " + invalidNames + " are invalid and do not match the pattern ^[a-z0-9]{1,11}$");
+            }
+        } else {
+            // More permissive for external ZooKeeper but still prevent shell variable issues
+            List<String> invalidNames = names.stream().filter(name -> !EXTERNAL_ZK_LISTENER_NAME_PATTERN.matcher(name).matches()).toList();
+            if (!invalidNames.isEmpty())    {
+                errors.add("listener names " + invalidNames + " are invalid and do not match the pattern ^[a-z0-9_]{1,20}$ (hyphens not allowed as they cause shell variable issues)");
             }
         }
 
