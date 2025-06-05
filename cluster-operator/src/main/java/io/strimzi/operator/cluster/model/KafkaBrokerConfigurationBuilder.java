@@ -42,6 +42,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -422,15 +423,20 @@ public class KafkaBrokerConfigurationBuilder {
         if (!isKraftControllerOnly) {
             writer.println("advertised.listeners=" + String.join(",", advertisedListeners));
 
-            // Configure inter.broker.listener.name
+            // Configure inter.broker.listener.name and SASL settings for inter-broker communication
+            String interBrokerListenerName = null;
             if (!isExternalZooKeeper) {
                 // For internal ZooKeeper, use the automatic replication listener
+                interBrokerListenerName = REPLICATION_LISTENER_NAME;
                 writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
             } else {
-                // For external ZooKeeper, use the first internal listener for inter-broker communication
-                String interBrokerListenerName = findInterBrokerListenerName(kafkaListeners);
+                // For external ZooKeeper, use the first appropriate listener for inter-broker communication
+                interBrokerListenerName = findInterBrokerListenerName(kafkaListeners);
                 if (interBrokerListenerName != null) {
                     writer.println("inter.broker.listener.name=" + interBrokerListenerName);
+
+                    // Configure SASL for inter-broker communication if needed
+                    configureSaslForInterBrokerCommunication(interBrokerListenerName, kafkaListeners);
                 }
             }
         } else if (node.controller() && kafkaMetadataConfigState.isZooKeeperToPostMigration()) {
@@ -438,10 +444,13 @@ public class KafkaBrokerConfigurationBuilder {
             if (!isExternalZooKeeper) {
                 writer.println("inter.broker.listener.name=" + REPLICATION_LISTENER_NAME);
             } else {
-                // For external ZooKeeper, use the first internal listener for inter-broker communication
+                // For external ZooKeeper, use the first appropriate listener for inter-broker communication
                 String interBrokerListenerName = findInterBrokerListenerName(kafkaListeners);
                 if (interBrokerListenerName != null) {
                     writer.println("inter.broker.listener.name=" + interBrokerListenerName);
+
+                    // Configure SASL for inter-broker communication if needed
+                    configureSaslForInterBrokerCommunication(interBrokerListenerName, kafkaListeners);
                 }
             }
         }
@@ -452,11 +461,61 @@ public class KafkaBrokerConfigurationBuilder {
             writer.println("control.plane.listener.name=" + CONTROL_PLANE_LISTENER_NAME);
         }
 
-        writer.println("sasl.enabled.mechanisms=");
+        // Configure global SASL settings
+        configureSaslEnabledMechanisms(kafkaListeners);
         writer.println("ssl.endpoint.identification.algorithm=HTTPS");
         writer.println();
 
         return this;
+    }
+
+    /**
+     * Configure SASL settings for inter-broker communication when using external ZooKeeper
+     *
+     * @param interBrokerListenerName The listener name used for inter-broker communication
+     * @param kafkaListeners List of user-defined listeners
+     */
+    private void configureSaslForInterBrokerCommunication(String interBrokerListenerName, List<GenericKafkaListener> kafkaListeners) {
+        // Find the listener configuration for the inter-broker listener
+        for (GenericKafkaListener listener : kafkaListeners) {
+            String listenerIdentifier = ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
+            if (listenerIdentifier.equals(interBrokerListenerName) && listener.getAuth() != null) {
+                // This listener uses SASL, configure inter-broker SASL protocol
+                if (listener.getAuth() instanceof KafkaListenerAuthenticationScramSha512) {
+                    writer.println("sasl.mechanism.inter.broker.protocol=SCRAM-SHA-512");
+                } else if (listener.getAuth() instanceof KafkaListenerAuthenticationOAuth) {
+                    writer.println("sasl.mechanism.inter.broker.protocol=OAUTHBEARER");
+                }
+                break;
+            }
+        }
+    }
+
+    /**
+     * Configure global SASL enabled mechanisms based on all listeners
+     *
+     * @param kafkaListeners List of user-defined listeners
+     */
+    private void configureSaslEnabledMechanisms(List<GenericKafkaListener> kafkaListeners) {
+        Set<String> enabledMechanisms = new HashSet<>();
+
+        // Collect all SASL mechanisms from all listeners
+        for (GenericKafkaListener listener : kafkaListeners) {
+            if (listener.getAuth() != null) {
+                if (listener.getAuth() instanceof KafkaListenerAuthenticationScramSha512) {
+                    enabledMechanisms.add("SCRAM-SHA-512");
+                } else if (listener.getAuth() instanceof KafkaListenerAuthenticationOAuth oauth) {
+                    if (oauth.isEnableOauthBearer()) {
+                        enabledMechanisms.add("OAUTHBEARER");
+                    }
+                    if (oauth.isEnablePlain()) {
+                        enabledMechanisms.add("PLAIN");
+                    }
+                }
+            }
+        }
+
+        writer.println("sasl.enabled.mechanisms=" + String.join(",", enabledMechanisms));
     }
 
     private void configureOAuthPrincipalBuilderIfNeeded(PrintWriter writer, List<GenericKafkaListener> kafkaListeners) {
