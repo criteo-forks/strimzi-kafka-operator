@@ -349,7 +349,8 @@ public class KafkaBrokerConfigurationBuilder {
         boolean isExternalZooKeeper = externalZooKeeper != null;
 
         // Control Plane listener is set for pure KRaft controller or combined node, and broker in ZooKeeper mode or in migration state but not when full KRaft.
-        if (node.controller() || (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration())) {
+        // For External ZooKeeper, users have full control over all listeners - no automatic listeners are created
+        if (!isExternalZooKeeper && (node.controller() || (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration()))) {
             listeners.add(CONTROL_PLANE_LISTENER_NAME + "://0.0.0.0:9090");
 
             // Control Plane listener to be advertised only with broker in ZooKeeper-based or migration but NOT when full KRaft only or mixed
@@ -368,31 +369,23 @@ public class KafkaBrokerConfigurationBuilder {
         // For that reason, we have to configure the Control Plane listener in the broker-only configuration as well,
         // even though they do not listen at the Control Plane listener port.
         // The brokers use this configuration to detect how to connect to the controllers, what certificates to use etc.
-        securityProtocol.add(CONTROL_PLANE_LISTENER_NAME + ":SSL");
-        // Control Plane listener is configured on KRaft broker only nodes as well for allowing TLS certificates keystore generation
-        // so that brokers are able to connect to controllers as TLS clients
-        configureControlPlaneListener();
+        // However, for external ZooKeeper, this is not needed since no automatic listeners are created
+        if (!isExternalZooKeeper) {
+            securityProtocol.add(CONTROL_PLANE_LISTENER_NAME + ":SSL");
+            // Control Plane listener is configured on KRaft broker only nodes as well for allowing TLS certificates keystore generation
+            // so that brokers are able to connect to controllers as TLS clients
+            configureControlPlaneListener();
+        }
 
         // Replication Listener to be configured on brokers and KRaft controllers only but until post-migration
-        if (node.broker() || node.controller() && kafkaMetadataConfigState.isZooKeeperToPostMigration()) {
+        // For external ZooKeeper, users must define their own replication listener
+        if (!isExternalZooKeeper && (node.broker() || node.controller() && kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
             securityProtocol.add(REPLICATION_LISTENER_NAME + ":SSL");
             configureReplicationListener();
         }
 
         // Non-controller listeners are used only on ZooKeeper based brokers or KRaft brokers (including mixed nodes)
         if (!isKraftControllerOnly) {
-            // For External ZooKeeper, skip automatic replication listener creation
-            // Users must explicitly define all listeners including replication listener
-            if (!isExternalZooKeeper) {
-                // Replication listener - only created automatically for internal ZooKeeper
-                listeners.add(REPLICATION_LISTENER_NAME + "://0.0.0.0:9091");
-                advertisedListeners.add(String.format("%s://%s:9091",
-                        REPLICATION_LISTENER_NAME,
-                        // Pod name constructed to be templatable for each individual ordinal
-                        DnsNameGenerator.podDnsNameWithoutClusterDomain(namespace, KafkaResources.brokersServiceName(clusterName), node.podName())
-                ));
-            }
-
             for (GenericKafkaListener listener : kafkaListeners) {
                 int port = listener.getPort();
                 String listenerName = ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
@@ -454,7 +447,8 @@ public class KafkaBrokerConfigurationBuilder {
         }
 
         // Control plane listener is on all ZooKeeper based brokers, needed during migration as well, when broker still using ZooKeeper but KRaft controllers are ready
-        if (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration()) {
+        // For external ZooKeeper, users have full control - no automatic control plane listener
+        if (!isExternalZooKeeper && node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration()) {
             writer.println("control.plane.listener.name=" + CONTROL_PLANE_LISTENER_NAME);
         }
 
@@ -982,6 +976,19 @@ public class KafkaBrokerConfigurationBuilder {
      * @return  Returns the builder instance
      */
     public KafkaBrokerConfigurationBuilder withTieredStorage(String clusterName, TieredStorage tieredStorage)  {
+        return withTieredStorage(clusterName, tieredStorage, null);
+    }
+
+    /**
+     * Configure the tiered storage configuration for Kafka brokers.
+     *
+     * @param clusterName     Name of the cluster
+     * @param tieredStorage   TieredStorage configuration.
+     * @param kafkaListeners  List of Kafka listeners (used for external ZooKeeper)
+     *
+     * @return  Returns the builder instance
+     */
+    public KafkaBrokerConfigurationBuilder withTieredStorage(String clusterName, TieredStorage tieredStorage, List<GenericKafkaListener> kafkaListeners)  {
         if (tieredStorage == null) {
             return this;
         }
@@ -992,7 +999,17 @@ public class KafkaBrokerConfigurationBuilder {
         writer.println("remote.log.storage.system.enable=true");
         writer.println("remote.log.metadata.manager.impl.prefix=rlmm.config.");
         writer.println("remote.log.metadata.manager.class.name=org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager");
-        writer.println("remote.log.metadata.manager.listener.name=" + REPLICATION_LISTENER_NAME);
+
+        // For external ZooKeeper, use first internal listener; for internal ZooKeeper, use replication listener
+        String metadataListenerName = REPLICATION_LISTENER_NAME;
+        if (kafkaListeners != null) {
+            String interBrokerListener = findInterBrokerListenerName(kafkaListeners);
+            if (interBrokerListener != null) {
+                metadataListenerName = interBrokerListener;
+            }
+        }
+
+        writer.println("remote.log.metadata.manager.listener.name=" + metadataListenerName);
         writer.println("rlmm.config.remote.log.metadata.common.client.bootstrap.servers="
             + clusterName + "-kafka-brokers:9091");
         writer.println("rlmm.config.remote.log.metadata.common.client.security.protocol=SSL");
@@ -1029,11 +1046,23 @@ public class KafkaBrokerConfigurationBuilder {
      * @return  Returns the builder instance
      */
     public KafkaBrokerConfigurationBuilder withQuotas(String clusterName, QuotasPlugin quotasPlugin) {
+        return withQuotas(clusterName, quotasPlugin, null);
+    }
+
+    /**
+     * Configures the quotas based on the type of the plugin - {@link QuotasPluginKafka}, {@link QuotasPluginStrimzi}
+     *
+     * @param clusterName    Name of the cluster
+     * @param quotasPlugin   Configuration of the quotas plugin
+     * @param kafkaListeners List of Kafka listeners (used for external ZooKeeper)
+     * @return  Returns the builder instance
+     */
+    public KafkaBrokerConfigurationBuilder withQuotas(String clusterName, QuotasPlugin quotasPlugin, List<GenericKafkaListener> kafkaListeners) {
         if (quotasPlugin != null) {
             // for the built-in Kafka quotas plugin we don't need to configure anything
             if (quotasPlugin instanceof QuotasPluginStrimzi quotasPluginStrimzi) {
                 printSectionHeader("Quotas configuration");
-                configureQuotasPluginStrimzi(clusterName, quotasPluginStrimzi);
+                configureQuotasPluginStrimzi(clusterName, quotasPluginStrimzi, kafkaListeners);
                 writer.println();
             }
         }
@@ -1046,8 +1075,9 @@ public class KafkaBrokerConfigurationBuilder {
      *
      * @param clusterName           Name of the cluster
      * @param quotasPluginStrimzi   Strimzi quotas plugin configuration
+     * @param kafkaListeners        List of Kafka listeners (used for external ZooKeeper)
      */
-    private void configureQuotasPluginStrimzi(String clusterName, QuotasPluginStrimzi quotasPluginStrimzi) {
+    private void configureQuotasPluginStrimzi(String clusterName, QuotasPluginStrimzi quotasPluginStrimzi, List<GenericKafkaListener> kafkaListeners) {
         // add Kafka broker's and CruiseControl's user to the excluded principals
         List<String> excludedPrincipals = new ArrayList<>(List.of(
             String.format("User:CN=%s,O=io.strimzi", KafkaResources.kafkaComponentName(clusterName)),
@@ -1056,8 +1086,23 @@ public class KafkaBrokerConfigurationBuilder {
 
         writer.println("client.quota.callback.class=io.strimzi.kafka.quotas.StaticQuotaCallback");
 
+        // For external ZooKeeper, use first internal listener; for internal ZooKeeper, use replication listener
+        String adminPort = "9091";
+        if (kafkaListeners != null) {
+            String interBrokerListener = findInterBrokerListenerName(kafkaListeners);
+            if (interBrokerListener != null) {
+                // Find the port of the inter-broker listener
+                for (GenericKafkaListener listener : kafkaListeners) {
+                    if (ListenersUtils.identifier(listener).equalsIgnoreCase(interBrokerListener)) {
+                        adminPort = String.valueOf(listener.getPort());
+                        break;
+                    }
+                }
+            }
+        }
+
         // configuration of Admin client that will check the cluster
-        writer.println("client.quota.callback.static.kafka.admin.bootstrap.servers=" + KafkaResources.brokersServiceName(clusterName) + ":9091");
+        writer.println("client.quota.callback.static.kafka.admin.bootstrap.servers=" + KafkaResources.brokersServiceName(clusterName) + ":" + adminPort);
         writer.println("client.quota.callback.static.kafka.admin.security.protocol=SSL");
         writer.println("client.quota.callback.static.kafka.admin.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
         writer.println("client.quota.callback.static.kafka.admin.ssl.keystore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);

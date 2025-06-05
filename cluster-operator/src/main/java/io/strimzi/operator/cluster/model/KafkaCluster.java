@@ -1815,8 +1815,10 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                         )
                         .withAuthorization(cluster, authorization)
                         .withCruiseControl(cluster, ccMetricsReporter, node.broker())
-                        .withTieredStorage(cluster, tieredStorage)
-                        .withQuotas(cluster, quotas)
+                        .withTieredStorage(cluster, tieredStorage,
+                            kafkaClusterSpec.getExternalZooKeeper() != null ? listeners : null)
+                        .withQuotas(cluster, quotas,
+                            kafkaClusterSpec.getExternalZooKeeper() != null ? listeners : null)
                         .withUserConfiguration(configuration, node.broker() && ccMetricsReporter != null);
         withZooKeeperOrKRaftConfiguration(pool, node, builder);
         return builder.build().trim();
