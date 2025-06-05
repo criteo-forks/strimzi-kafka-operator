@@ -66,11 +66,6 @@ public class ListenersValidator {
     }
 
     /*test*/
-    static Set<String> validateAndGetErrorMessages(Reconciliation reconciliation, Set<NodeRef> brokerNodes, List<GenericKafkaListener> listeners) {
-        return validateAndGetErrorMessages(reconciliation, brokerNodes, listeners, null);
-    }
-
-    /*test*/
     static Set<String> validateAndGetErrorMessages(Reconciliation reconciliation, Set<NodeRef> brokerNodes, List<GenericKafkaListener> listeners, ExternalZooKeeperSpec externalZooKeeper) {
         Set<String> errors = new HashSet<>(0);
         List<Integer> ports = getPorts(listeners);
@@ -80,9 +75,12 @@ public class ListenersValidator {
             errors.add("every listener needs to have a unique name");
         }
 
-        List<String> invalidNames = names.stream().filter(name -> !LISTENER_NAME_PATTERN.matcher(name).matches()).toList();
-        if (!invalidNames.isEmpty())    {
-            errors.add("listener names " + invalidNames + " are invalid and do not match the pattern " + GenericKafkaListener.LISTENER_NAME_REGEX);
+        // Only validate listener name patterns when NOT using external ZooKeeper
+        if (externalZooKeeper == null) {
+            List<String> invalidNames = names.stream().filter(name -> !LISTENER_NAME_PATTERN.matcher(name).matches()).toList();
+            if (!invalidNames.isEmpty())    {
+                errors.add("listener names " + invalidNames + " are invalid and do not match the pattern " + GenericKafkaListener.LISTENER_NAME_REGEX);
+            }
         }
 
         if (ports.size() != listeners.size())   {
@@ -94,9 +92,12 @@ public class ListenersValidator {
             errors.add("listeners cannot use ports " + forbiddenPorts + " which are reserved for other purposes");
         }
 
-        List<Integer> invalidPorts = ports.stream().filter(port -> port < LOWEST_ALLOWED_PORT_NUMBER).toList();
-        if (!invalidPorts.isEmpty())  {
-            errors.add("listeners cannot use ports " + invalidPorts + " which are below the lowest allowed port number " + LOWEST_ALLOWED_PORT_NUMBER);
+        // Only validate minimum port restrictions when NOT using external ZooKeeper
+        if (externalZooKeeper == null) {
+            List<Integer> invalidPorts = ports.stream().filter(port -> port < LOWEST_ALLOWED_PORT_NUMBER).toList();
+            if (!invalidPorts.isEmpty())  {
+                errors.add("listeners cannot use ports " + invalidPorts + " which are below the lowest allowed port number " + LOWEST_ALLOWED_PORT_NUMBER);
+            }
         }
 
         // External ZooKeeper specific validation
@@ -105,7 +106,10 @@ public class ListenersValidator {
         }
 
         for (GenericKafkaListener listener : listeners) {
-            validatePortNumbers(errors, listener);
+            // Only validate port numbers when NOT using external ZooKeeper
+            if (externalZooKeeper == null) {
+                validatePortNumbers(errors, listener);
+            }
             validateRouteAndIngressTlsOnly(errors, listener);
             validateTlsFeaturesOnNonTlsListener(errors, listener);
             validateOauth(errors, listener);
@@ -155,6 +159,12 @@ public class ListenersValidator {
 
         return errors;
     }
+
+    /*test*/
+    static Set<String> validateAndGetErrorMessages(Reconciliation reconciliation, Set<NodeRef> brokerNodes, List<GenericKafkaListener> listeners) {
+        return validateAndGetErrorMessages(reconciliation, brokerNodes, listeners, null);
+    }
+
     /**
      * Validates that the listener has a BrokerCertChainAndKey with non-empty values
      *
@@ -721,16 +731,10 @@ public class ListenersValidator {
      * @param listeners Listeners configured by the user
      */
     private static void validateExternalZooKeeperListeners(Set<String> errors, List<GenericKafkaListener> listeners) {
-        // Check if at least one internal listener is provided for inter-broker communication
-        // This listener can be on any port, not just 9091
-        boolean hasInternalListener = listeners.stream()
-                .anyMatch(listener -> listener.getType() == KafkaListenerType.INTERNAL);
+        // Note: When using external ZooKeeper, we allow more flexible listener configurations
+        // The requirement for internal listeners is relaxed to support custom deployments
 
-        if (!hasInternalListener) {
-            errors.add("When using external ZooKeeper, you must provide at least one internal listener for inter-broker communication");
-        }
-
-        // Ensure no internal names are used
+        // Ensure no internal names are used (but only warn, don't error)
         List<String> reservedNames = List.of("replication", "controlplane");
         List<String> conflictingNames = listeners.stream()
                 .map(GenericKafkaListener::getName)
@@ -739,6 +743,11 @@ public class ListenersValidator {
 
         if (!conflictingNames.isEmpty()) {
             errors.add("When using external ZooKeeper, listener names " + conflictingNames + " are reserved and cannot be used");
+        }
+
+        // Additional validation: ensure at least one listener is provided
+        if (listeners.isEmpty()) {
+            errors.add("When using external ZooKeeper, at least one listener must be configured");
         }
     }
 }
