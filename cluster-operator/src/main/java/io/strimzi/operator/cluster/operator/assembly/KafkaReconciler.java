@@ -500,9 +500,16 @@ public class KafkaReconciler {
      * @return  Completes when the service account was successfully created or updated
      */
     protected Future<Void> serviceAccount() {
-        return serviceAccountOperator
-                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.kafkaComponentName(reconciliation.name()), kafka.generateServiceAccount())
-                .map((Void) null);
+        // If any pod template specifies a custom service account name, we should not create/manage the default one
+        if (kafka.hasCustomServiceAccountName()) {
+            // Custom service account is specified, skip creating the default one
+            return Future.succeededFuture();
+        } else {
+            // No custom service account specified, create/manage the default one
+            return serviceAccountOperator
+                    .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.kafkaComponentName(reconciliation.name()), kafka.generateServiceAccount())
+                    .map((Void) null);
+        }
     }
 
     /**

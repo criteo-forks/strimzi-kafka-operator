@@ -2058,4 +2058,29 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     public ExternalZooKeeperSpec getExternalZooKeeper() {
         return kafkaClusterSpec != null ? kafkaClusterSpec.getExternalZooKeeper() : null;
     }
+
+    /**
+     * Checks if any pod template specifies a custom service account name. When a custom service account name
+     * is specified, the operator should not create/manage the default service account.
+     *
+     * @return true if any pod template has a custom service account name configured, false otherwise
+     */
+    public boolean hasCustomServiceAccountName() {
+        // Check the main Kafka cluster template first
+        if (kafkaClusterSpec != null && kafkaClusterSpec.getTemplate() != null) {
+            PodTemplate kafkaPodTemplate = kafkaClusterSpec.getTemplate().getPod();
+            if (kafkaPodTemplate != null && kafkaPodTemplate.getServiceAccountName() != null) {
+                return true;
+            }
+        }
+
+        // Check all node pool templates
+        for (KafkaPool pool : nodePools) {
+            if (pool.templatePod != null && pool.templatePod.getServiceAccountName() != null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }
