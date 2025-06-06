@@ -479,7 +479,7 @@ public class KafkaBrokerConfigurationBuilder {
         // Find the listener configuration for the inter-broker listener
         for (GenericKafkaListener listener : kafkaListeners) {
             String listenerIdentifier = ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
-            if (listenerIdentifier.equals(interBrokerListenerName) && listener.getAuth() != null) {
+            if (listenerIdentifier.equalsIgnoreCase(interBrokerListenerName) && listener.getAuth() != null) {
                 // This listener uses SASL, configure inter-broker SASL protocol
                 if (listener.getAuth() instanceof KafkaListenerAuthenticationScramSha512) {
                     writer.println("sasl.mechanism.inter.broker.protocol=SCRAM-SHA-512");
@@ -1255,11 +1255,8 @@ public class KafkaBrokerConfigurationBuilder {
 
     /**
      * Finds the first suitable listener to use for inter-broker communication
-     * when using external ZooKeeper. This method prioritizes listeners in the following order:
-     * 1. Internal listeners (preferred for security)
-     * 2. TLS-enabled listeners (for security)
-     * 3. SASL-enabled listeners (for authentication)
-     * 4. First available listener (fallback)
+     * when using external ZooKeeper. This method uses the first listener in the array
+     * by default (following Kafka's behavior), with fallbacks for safety.
      *
      * @param kafkaListeners List of user-defined listeners
      * @return The listener name/identifier to use for inter-broker communication, or null if none found
@@ -1269,28 +1266,8 @@ public class KafkaBrokerConfigurationBuilder {
             return null;
         }
 
-        // Priority 1: Look for internal listeners first (most secure for inter-broker communication)
-        for (GenericKafkaListener listener : kafkaListeners) {
-            if (listener.getType() == KafkaListenerType.INTERNAL) {
-                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
-            }
-        }
-
-        // Priority 2: Look for TLS-enabled listeners (secure communication)
-        for (GenericKafkaListener listener : kafkaListeners) {
-            if (listener.isTls()) {
-                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
-            }
-        }
-
-        // Priority 3: Look for SASL-enabled listeners (authenticated communication)
-        for (GenericKafkaListener listener : kafkaListeners) {
-            if (listener.getAuth() != null) {
-                return ListenersUtils.identifier(listener).toUpperCase(Locale.ENGLISH);
-            }
-        }
-
-        // Priority 4: Use the first available listener as fallback
-        return ListenersUtils.identifier(kafkaListeners.get(0)).toUpperCase(Locale.ENGLISH);
+        // Priority 1: Use the first listener (following Kafka's default behavior)
+        GenericKafkaListener firstListener = kafkaListeners.get(0);
+        return ListenersUtils.identifier(firstListener).toUpperCase(Locale.ENGLISH);
     }
 }
