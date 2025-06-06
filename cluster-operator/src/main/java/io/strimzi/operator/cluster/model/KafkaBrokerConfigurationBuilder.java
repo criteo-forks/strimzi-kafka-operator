@@ -485,6 +485,18 @@ public class KafkaBrokerConfigurationBuilder {
                     writer.println("sasl.mechanism.inter.broker.protocol=SCRAM-SHA-512");
                 } else if (listener.getAuth() instanceof KafkaListenerAuthenticationOAuth) {
                     writer.println("sasl.mechanism.inter.broker.protocol=OAUTHBEARER");
+                } else if (listener.getAuth() instanceof KafkaListenerAuthenticationCustom customAuth) {
+                    // Handle custom authentication - try to extract SASL mechanism from listener config
+                    Map<String, Object> listenerConfig = customAuth.getListenerConfig();
+                    if (listenerConfig != null) {
+                        Object enabledMechanisms = listenerConfig.get("sasl.enabled.mechanisms");
+                        if (enabledMechanisms != null) {
+                            String mechanisms = enabledMechanisms.toString();
+                            // Use the first mechanism as inter-broker protocol
+                            String firstMechanism = mechanisms.split(",")[0].trim().toUpperCase();
+                            writer.println("sasl.mechanism.inter.broker.protocol=" + firstMechanism);
+                        }
+                    }
                 }
                 break;
             }
@@ -510,6 +522,18 @@ public class KafkaBrokerConfigurationBuilder {
                     }
                     if (oauth.isEnablePlain()) {
                         enabledMechanisms.add("PLAIN");
+                    }
+                } else if (listener.getAuth() instanceof KafkaListenerAuthenticationCustom customAuth) {
+                    // Handle custom authentication - extract SASL mechanisms from listener config
+                    Map<String, Object> listenerConfig = customAuth.getListenerConfig();
+                    if (listenerConfig != null) {
+                        Object mechanisms = listenerConfig.get("sasl.enabled.mechanisms");
+                        if (mechanisms != null) {
+                            String[] mechanismArray = mechanisms.toString().split(",");
+                            for (String mechanism : mechanismArray) {
+                                enabledMechanisms.add(mechanism.trim().toUpperCase());
+                            }
+                        }
                     }
                 }
             }
