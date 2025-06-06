@@ -1,0 +1,91 @@
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: my-kafka-cluster-tls
+  namespace: myproject
+spec:
+  kafka:
+    version: 3.7.0
+    replicas: 3
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+      - name: external
+        port: 9094
+        type: nodeport
+        tls: true
+    config:
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      inter.broker.protocol.version: "3.7"
+    storage:
+      type: jbod
+      volumes:
+      - id: 0
+        type: persistent-claim
+        size: 100Gi
+        deleteClaim: false
+    # External ZooKeeper configuration with TLS client authentication
+    # This replaces the internal ZooKeeper deployment - no ZooKeeper pods will be created
+    externalZooKeeper:
+      # Connection string to your existing ZooKeeper ensemble
+      connect: "zk-1.example.com:2182,zk-2.example.com:2182,zk-3.example.com:2182"
+      # Enable TLS encryption for ZooKeeper connections
+      tls: true
+      # Configure client certificate authentication for ZooKeeper
+      authentication:
+        type: tls
+        # Reference to the secret containing client certificates for ZooKeeper authentication
+        certificateAndKey:
+          secretName: my-zk-client-cert
+          certificate: client.crt  # Certificate file name in the secret
+          key: client.key         # Private key file name in the secret
+      # Optional: Additional ZooKeeper client configuration
+      config:
+        # Session timeout for ZooKeeper connections (default: 18000)
+        zookeeper.session.timeout.ms: 18000
+        # Connection timeout for ZooKeeper connections (default: 16000)
+        zookeeper.connection.timeout.ms: 16000
+        # Custom ZooKeeper SASL configuration if needed
+        # zookeeper.sasl.client: "false"
+
+  # NOTE: The zookeeper section is omitted when using external ZooKeeper
+  # All ZooKeeper management is handled externally
+
+  # Entity Operator for managing topics and users (optional)
+  entityOperator:
+    topicOperator: {}
+    userOperator: {}
+---
+# Secret containing client certificates for ZooKeeper TLS authentication
+# This secret must be created and contain the proper certificates before deploying the Kafka cluster
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-zk-client-cert
+  namespace: myproject
+type: Opaque
+data:
+  # Client certificate for authenticating to ZooKeeper (base64 encoded)
+  client.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+  # Client private key for authenticating to ZooKeeper (base64 encoded)
+  client.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...
+  # CA certificate that signed the ZooKeeper server certificates (base64 encoded)
+  # This is used to verify the ZooKeeper server identity
+  ca.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...
+---
+# Example: How to create the certificate secret from files
+# kubectl create secret generic my-zk-client-cert \
+#   --from-file=client.crt=path/to/client.crt \
+#   --from-file=client.key=path/to/client.key \
+#   --from-file=ca.crt=path/to/ca.crt \
+#   -n myproject

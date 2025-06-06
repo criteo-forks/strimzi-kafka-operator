@@ -452,6 +452,9 @@ public class KafkaReconciler {
             Map<Integer, Map<String, String>> kafkaAdvertisedPorts,
             boolean allowReconfiguration
     ) {
+        // Detect if external ZooKeeper is configured
+        boolean isExternalZooKeeper = kafka.getExternalZooKeeper() != null;
+
         return new KafkaRoller(
                     reconciliation,
                     vertx,
@@ -467,6 +470,7 @@ public class KafkaReconciler {
                     logging,
                     kafka.getKafkaVersion(),
                     allowReconfiguration,
+                    isExternalZooKeeper,
                     eventsPublisher
             ).rollingRestart(podNeedsRestart);
     }
@@ -496,9 +500,16 @@ public class KafkaReconciler {
      * @return  Completes when the service account was successfully created or updated
      */
     protected Future<Void> serviceAccount() {
-        return serviceAccountOperator
-                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.kafkaComponentName(reconciliation.name()), kafka.generateServiceAccount())
-                .map((Void) null);
+        // If any pod template specifies a custom service account name, we should not create/manage the default one
+        if (kafka.hasCustomServiceAccountName()) {
+            // Custom service account is specified, skip creating the default one
+            return Future.succeededFuture();
+        } else {
+            // No custom service account specified, create/manage the default one
+            return serviceAccountOperator
+                    .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.kafkaComponentName(reconciliation.name()), kafka.generateServiceAccount())
+                    .map((Void) null);
+        }
     }
 
     /**
@@ -894,6 +905,12 @@ public class KafkaReconciler {
      * @return  Future which completes when the Cluster ID is retrieved and set in the status
      */
     protected Future<Void> clusterId(KafkaStatus kafkaStatus) {
+        // Skip cluster ID retrieval for external ZooKeeper setups
+        if (kafka.getExternalZooKeeper() != null) {
+            LOGGER.debugCr(reconciliation, "Skipping clusterId retrieval for external ZooKeeper configuration");
+            return Future.succeededFuture();
+        }
+
         LOGGER.debugCr(reconciliation, "Attempt to get clusterId");
         return vertx.createSharedWorkerExecutor("kubernetes-ops-pool")
                 .executeBlocking(() -> {
@@ -926,6 +943,12 @@ public class KafkaReconciler {
      * @return  Future which completes when the default quotas are configured
      */
     protected Future<Void> defaultKafkaQuotas() {
+        // Skip quota configuration for external ZooKeeper setups
+        if (kafka.getExternalZooKeeper() != null) {
+            LOGGER.debugCr(reconciliation, "Skipping default Kafka quotas configuration for external ZooKeeper setup");
+            return Future.succeededFuture();
+        }
+
         return DefaultKafkaQuotasManager.reconcileDefaultUserQuotas(reconciliation, vertx, adminClientProvider, this.coTlsPemIdentity.pemTrustSet(), this.coTlsPemIdentity.pemAuthIdentity(), kafka.quotas());
     }
 

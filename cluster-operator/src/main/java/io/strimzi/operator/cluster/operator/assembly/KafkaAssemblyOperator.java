@@ -252,6 +252,13 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
             }
         }
 
+        // Validate external ZooKeeper configuration
+        try {
+            KRaftUtils.validateKRaftMigrationWhenUsingExternalZooKeeper(reconcileState.reconciliation, reconcileState.kafkaAssembly, reconcileState.reconciliation.namespace());
+        } catch (InvalidResourceException e)    {
+            return Future.failedFuture(e);
+        }
+
         // only when cluster is full KRaft we can avoid reconcile ZooKeeper and not having the automatic handling of
         // inter broker protocol and log message format via the version change component
         reconcileState.initialStatus()
@@ -261,10 +268,10 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
                 .compose(state -> state.versionChange(kafkaMetadataConfigState.isKRaft()))
 
                 // Run reconciliations of the different components
-                .compose(state -> kafkaMetadataConfigState.isKRaft() ? Future.succeededFuture(state) : state.reconcileZooKeeper(clock))
+                .compose(state -> shouldSkipZooKeeperReconciliation(kafkaMetadataConfigState, reconcileState.kafkaAssembly) ? Future.succeededFuture(state) : state.reconcileZooKeeper(clock))
                 .compose(state -> reconcileState.kafkaMetadataStateManager.shouldDestroyZooKeeperNodes() ? state.reconcileZooKeeperEraser() : Future.succeededFuture(state))
                 .compose(state -> state.reconcileKafka(clock))
-                .compose(state -> state.reconcileEntityOperator(clock))
+                .compose(state -> shouldSkipEntityOperatorReconciliation(reconcileState.kafkaAssembly) ? Future.succeededFuture(state) : state.reconcileEntityOperator(clock))
                 .compose(state -> state.reconcileCruiseControl(clock))
                 .compose(state -> state.reconcileKafkaExporter(clock))
 
@@ -933,5 +940,21 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
      */
     /* test */ void enqueueReconciliation(Reconciliation reconciliation) {
         reconcile(reconciliation);
+    }
+
+    private boolean shouldSkipZooKeeperReconciliation(KafkaMetadataConfigurationState kafkaMetadataConfigState, Kafka kafkaAssembly) {
+        // Skip ZooKeeper reconciliation if:
+        // 1. Running in KRaft mode, OR
+        // 2. External ZooKeeper is configured (kafka.externalZooKeeper is present)
+        return kafkaMetadataConfigState.isKRaft() ||
+               (kafkaAssembly.getSpec().getKafka() != null &&
+                kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null);
+    }
+
+    private boolean shouldSkipEntityOperatorReconciliation(Kafka kafkaAssembly) {
+        // Skip Entity Operator reconciliation if:
+        // 1. External ZooKeeper is configured (kafka.externalZooKeeper is present)
+        return kafkaAssembly.getSpec().getKafka() != null &&
+               kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null;
     }
 }
