@@ -68,7 +68,7 @@ public class UserOperatorConfig {
     /**
      * Kafka bootstrap servers list
      */
-    public static final ConfigParameter<String> KAFKA_BOOTSTRAP_SERVERS = new ConfigParameter<>("STRIMZI_KAFKA_BOOTSTRAP_SERVERS", STRING, "localhost:9091", CONFIG_VALUES);
+    public static final ConfigParameter<String> KAFKA_BOOTSTRAP_SERVERS = new ConfigParameter<>("STRIMZI_KAFKA_BOOTSTRAP_SERVERS", STRING, "localhost:9096", CONFIG_VALUES);
     /**
      * Configures the default prefix of user secrets created by the operator
      */

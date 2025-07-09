@@ -561,6 +561,7 @@ public class CaReconciler {
                 null,
                 null,
                 false,
+                false,
                 eventPublisher
         ).rollingRestart(pod -> {
             LOGGER.debugCr(reconciliation, "Rolling Pod {} due to {}", pod.getMetadata().getName(), podRollReasons.getReasons());

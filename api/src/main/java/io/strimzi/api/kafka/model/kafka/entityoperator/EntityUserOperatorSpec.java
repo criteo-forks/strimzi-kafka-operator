@@ -44,7 +44,7 @@ import java.util.Map;
 @EqualsAndHashCode
 @ToString
 public class EntityUserOperatorSpec implements HasConfigurableLogging, HasLivenessProbe, HasReadinessProbe, UnknownPropertyPreserving {
-    public static final int DEFAULT_BOOTSTRAP_SERVERS_PORT = 9091;
+    public static final int DEFAULT_BOOTSTRAP_SERVERS_PORT = 9096;
     public static final String DEFAULT_SECRET_PREFIX = "";
 
     private String watchedNamespace;

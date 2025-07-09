@@ -141,7 +141,7 @@ class SecurityST extends AbstractST {
             verifyCerts(testStorage.getClusterName(), outputCertificate, "zookeeper");
         }
 
-        List<String> kafkaPorts = new ArrayList<>(Arrays.asList("9091", "9093"));
+        List<String> kafkaPorts = new ArrayList<>(Arrays.asList("9096", "9093"));
         List<String> zkPorts = new ArrayList<>(Arrays.asList("2181", "3888"));
         List<String> brokerPods = kubeClient().listPodNames(testStorage.getNamespaceName(), testStorage.getBrokerSelector());
 

@@ -40,6 +40,7 @@ import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
 import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.JvmOptions;
 import io.strimzi.api.kafka.model.common.Rack;
 import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
 import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
@@ -86,6 +87,7 @@ import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.model.StatusUtils;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.strimzi.api.kafka.model.kafka.externalzookeeper.ExternalZooKeeperSpec;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -121,7 +123,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     /**
      * Port number used for replication
      */
-    public static final int REPLICATION_PORT = 9091;
+    public static final int REPLICATION_PORT = 9096;
     protected static final String REPLICATION_PORT_NAME = "tcp-replication";
     protected static final int KAFKA_AGENT_PORT = 8443;
     protected static final String KAFKA_AGENT_PORT_NAME = "tcp-kafkaagent";
@@ -227,6 +229,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private QuotasPlugin quotas;
     /* test */ KafkaConfiguration configuration;
     private KafkaMetadataConfigurationState kafkaMetadataConfigState;
+    private KafkaClusterSpec kafkaClusterSpec;
 
     /**
      * Warning conditions generated from the Custom Resource
@@ -352,6 +355,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         }
 
         result.configuration = configuration;
+        result.kafkaClusterSpec = kafkaClusterSpec;
 
         // We set the user-configured inter.broker.protocol.version if needed (when not set by the user)
         // In KRaft mode, it should be always null
@@ -381,7 +385,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             throw new InvalidResourceException("The required field .spec.kafka.listeners is missing");
         }
         List<GenericKafkaListener> listeners = kafkaClusterSpec.getListeners();
-        ListenersValidator.validate(reconciliation, result.brokerNodes(), listeners);
+        ListenersValidator.validate(reconciliation, result.brokerNodes(), listeners, kafkaClusterSpec.getExternalZooKeeper());
         result.listeners = listeners;
 
         // Set authorization
@@ -419,6 +423,9 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         // Should run at the end when everything is set
         KafkaSpecChecker specChecker = new KafkaSpecChecker(kafkaSpec, versions, result);
         result.warningConditions.addAll(specChecker.run(kafkaMetadataConfigState.isKRaft()));
+
+        result.gcLoggingEnabled = kafkaClusterSpec.getJvmOptions() == null ? JvmOptions.DEFAULT_GC_LOGGING_ENABLED : kafkaClusterSpec.getJvmOptions().isGcLoggingEnabled();
+
 
         return result;
     }
@@ -1173,7 +1180,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                             namespace,
                             pool.labels.withStrimziBrokerRole(node.broker()).withStrimziControllerRole(node.controller()),
                             pool.componentName,
-                            componentName,
+                            pool.getServiceAccountName() != null ? pool.getServiceAccountName() : componentName,
                             pool.templatePod,
                             DEFAULT_POD_LABELS,
                             podAnnotationsProvider.apply(node.nodeId()),
@@ -1365,6 +1372,21 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             CertUtils.createTrustedCertificatesVolumes(volumeList, keycloakAuthz.getTlsTrustedCertificates(), isOpenShift, "authz-keycloak");
         }
 
+        // Add external ZooKeeper certificate volumes if configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls()
+            && kafkaClusterSpec.getExternalZooKeeper().getAuthentication() != null
+            && "tls".equals(kafkaClusterSpec.getExternalZooKeeper().getAuthentication().getType())) {
+            // Add external ZooKeeper client certificate volume
+            AuthenticationUtils.configureClientAuthenticationVolumes(
+                kafkaClusterSpec.getExternalZooKeeper().getAuthentication(),
+                volumeList,
+                "external-zookeeper-certs",
+                isOpenShift
+            );
+        }
+
         return volumeList;
     }
 
@@ -1434,6 +1456,23 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
 
         if (authorization instanceof KafkaAuthorizationKeycloak keycloakAuthz) {
             CertUtils.createTrustedCertificatesVolumeMounts(volumeMountList, keycloakAuthz.getTlsTrustedCertificates(), TRUSTED_CERTS_BASE_VOLUME_MOUNT + "/authz-keycloak-certs/", "authz-keycloak");
+        }
+
+        // Add external ZooKeeper certificate volume mounts if configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls() != null
+            && kafkaClusterSpec.getExternalZooKeeper().getTls()
+            && kafkaClusterSpec.getExternalZooKeeper().getAuthentication() != null
+            && "tls".equals(kafkaClusterSpec.getExternalZooKeeper().getAuthentication().getType())) {
+            // Add external ZooKeeper client certificate volume mounts
+            AuthenticationUtils.configureClientAuthenticationVolumeMounts(
+                kafkaClusterSpec.getExternalZooKeeper().getAuthentication(),
+                volumeMountList,
+                TRUSTED_CERTS_BASE_VOLUME_MOUNT,
+                "/tmp/kafka/external-zookeeper-password",
+                TRUSTED_CERTS_BASE_VOLUME_MOUNT,
+                "external-zookeeper-certs"
+            );
         }
 
         return volumeMountList;
@@ -1550,6 +1589,12 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         JvmOptionUtils.heapOptions(varList, 50, 5L * 1024L * 1024L * 1024L, pool.jvmOptions, pool.resources);
         JvmOptionUtils.jvmPerformanceOptions(varList, pool.jvmOptions);
         JvmOptionUtils.jvmSystemProperties(varList, pool.jvmOptions);
+
+        // Add external ZooKeeper environment variables if external ZooKeeper is configured
+        if (kafkaClusterSpec.getExternalZooKeeper() != null) {
+            varList.add(ContainerUtils.createEnvVar("EXTERNAL_ZOOKEEPER_CONNECT", kafkaClusterSpec.getExternalZooKeeper().getConnect()));
+            varList.add(ContainerUtils.createEnvVar("EXTERNAL_ZOOKEEPER_TLS", String.valueOf(kafkaClusterSpec.getExternalZooKeeper().getTls() != null && kafkaClusterSpec.getExternalZooKeeper().getTls())));
+        }
 
         for (GenericKafkaListener listener : listeners) {
             if (isListenerWithOAuth(listener))   {
@@ -1765,12 +1810,15 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                                 namespace,
                                 listeners,
                                 listenerId -> advertisedHostnames.get(node.nodeId()).get(listenerId),
-                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId)
+                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId),
+                                kafkaClusterSpec.getExternalZooKeeper()
                         )
                         .withAuthorization(cluster, authorization)
                         .withCruiseControl(cluster, ccMetricsReporter, node.broker())
-                        .withTieredStorage(cluster, tieredStorage)
-                        .withQuotas(cluster, quotas)
+                        .withTieredStorage(cluster, tieredStorage,
+                            kafkaClusterSpec.getExternalZooKeeper() != null ? listeners : null)
+                        .withQuotas(cluster, quotas,
+                            kafkaClusterSpec.getExternalZooKeeper() != null ? listeners : null)
                         .withUserConfiguration(configuration, node.broker() && ccMetricsReporter != null);
         withZooKeeperOrKRaftConfiguration(pool, node, builder);
         return builder.build().trim();
@@ -1808,7 +1856,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private void withZooKeeperOrKRaftConfiguration(KafkaPool pool, NodeRef node, KafkaBrokerConfigurationBuilder builder) {
         if ((node.broker() && this.kafkaMetadataConfigState.isZooKeeperToMigration()) ||
                 (node.controller() && this.kafkaMetadataConfigState.isPreMigrationToKRaft() && this.kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
-            builder.withZookeeper(cluster);
+            // Pass external ZooKeeper configuration if available, otherwise null for internal ZooKeeper
+            builder.withZookeeper(cluster, kafkaClusterSpec.getExternalZooKeeper());
             LOGGER.debugCr(reconciliation, "Adding ZooKeeper connection configuration on node [{}]", node.podName());
         }
 
@@ -1999,5 +2048,45 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         } else {
             return labels.strimziSelectorLabels();
         }
+    }
+
+    /**
+     * Returns the external ZooKeeper configuration if configured, null otherwise.
+     *
+     * @return External ZooKeeper specification or null
+     */
+    public ExternalZooKeeperSpec getExternalZooKeeper() {
+        return kafkaClusterSpec != null ? kafkaClusterSpec.getExternalZooKeeper() : null;
+    }
+
+    /**
+     * Checks if any pod template specifies a custom service account name. When a custom service account name
+     * is specified, the operator should not create/manage the default service account.
+     *
+     * @return true if any pod template has a custom service account name configured, false otherwise
+     */
+    public boolean hasCustomServiceAccountName() {
+        // Check the main Kafka cluster template first
+        if (kafkaClusterSpec != null && kafkaClusterSpec.getTemplate() != null) {
+            PodTemplate kafkaPodTemplate = kafkaClusterSpec.getTemplate().getPod();
+            if (kafkaPodTemplate != null && kafkaPodTemplate.getServiceAccountName() != null) {
+                return true;
+            }
+        }
+
+        // Check all node pool templates and direct serviceAccountName fields
+        for (KafkaPool pool : nodePools) {
+            // Check direct serviceAccountName field in the KafkaNodePool spec
+            if (pool.getServiceAccountName() != null) {
+                return true;
+            }
+
+            // Check pod template serviceAccountName
+            if (pool.templatePod != null && pool.templatePod.getServiceAccountName() != null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
