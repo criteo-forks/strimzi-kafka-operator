@@ -189,7 +189,7 @@ public class KafkaClusterPodSetTest {
         assertThat(config, containsString("broker.id=2"));
         assertThat(config, containsString("node.id=2"));
         assertThat(config, containsString("log.dirs=/var/lib/kafka/data-0/kafka-log2"));
-        assertThat(config, containsString("advertised.listeners=CONTROLPLANE-9090://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9090,REPLICATION-9091://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9091,PLAIN-9092://broker-2:10002"));
+        assertThat(config, containsString("advertised.listeners=CONTROLPLANE-9090://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9090,REPLICATION-9096://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9096,PLAIN-9092://broker-2:10002"));
     }
 
     @ParallelTest

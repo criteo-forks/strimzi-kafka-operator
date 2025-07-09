@@ -134,11 +134,11 @@ public class KafkaRollerTest {
                 brokerId -> succeededFuture(true),
                 true, mock, mockKafkaAgentClientProvider(), true, null, -1);
         List<String> expectedTcpProbes = List.of(
-                "c-kafka-0.c-kafka-brokers.ns.svc.cluster.local:9091",
-                "c-kafka-1.c-kafka-brokers.ns.svc.cluster.local:9091",
-                "c-kafka-2.c-kafka-brokers.ns.svc.cluster.local:9091",
-                "c-kafka-3.c-kafka-brokers.ns.svc.cluster.local:9091",
-                "c-kafka-4.c-kafka-brokers.ns.svc.cluster.local:9091"
+                "c-kafka-0.c-kafka-brokers.ns.svc.cluster.local:9096",
+                "c-kafka-1.c-kafka-brokers.ns.svc.cluster.local:9096",
+                "c-kafka-2.c-kafka-brokers.ns.svc.cluster.local:9096",
+                "c-kafka-3.c-kafka-brokers.ns.svc.cluster.local:9096",
+                "c-kafka-4.c-kafka-brokers.ns.svc.cluster.local:9096"
         );
         doSuccessfulRollingRestart(testContext, kafkaRoller,
                 asList(0, 1, 2, 3, 4),

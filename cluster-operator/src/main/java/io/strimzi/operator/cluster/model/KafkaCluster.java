@@ -123,7 +123,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     /**
      * Port number used for replication
      */
-    public static final int REPLICATION_PORT = 9091;
+    public static final int REPLICATION_PORT = 9096;
     protected static final String REPLICATION_PORT_NAME = "tcp-replication";
     protected static final int KAFKA_AGENT_PORT = 8443;
     protected static final String KAFKA_AGENT_PORT_NAME = "tcp-kafkaagent";

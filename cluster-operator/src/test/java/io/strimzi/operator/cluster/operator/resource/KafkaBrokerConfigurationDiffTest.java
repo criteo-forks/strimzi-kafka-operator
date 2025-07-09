@@ -268,13 +268,13 @@ public class KafkaBrokerConfigurationDiffTest {
 
     @Test
     public void testChangedListenerSecurityProtocolMapFromNonDefault() {
-        List<ConfigEntry> ces = singletonList(new ConfigEntry("listener.security.protocol.map", "REPLICATION-9091:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL,EXTERNAL-9094:SSL"));
-        List<ConfigEntry> ces2 = singletonList(new ConfigEntry("listener.security.protocol.map", "REPLICATION-9091:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL"));
+        List<ConfigEntry> ces = singletonList(new ConfigEntry("listener.security.protocol.map", "REPLICATION-9096:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL,EXTERNAL-9094:SSL"));
+        List<ConfigEntry> ces2 = singletonList(new ConfigEntry("listener.security.protocol.map", "REPLICATION-9096:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL"));
         KafkaBrokerConfigurationDiff kcd = new KafkaBrokerConfigurationDiff(Reconciliation.DUMMY_RECONCILIATION, getCurrentConfiguration(ces),
                 getDesiredConfiguration(ces2), kafkaVersion, nodeRef);
         assertThat(kcd.getDiffSize(), is(1));
         assertThat(kcd.canBeUpdatedDynamically(), is(true));
-        assertConfig(kcd, new ConfigEntry("listener.security.protocol.map", "REPLICATION-9091:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL"));
+        assertConfig(kcd, new ConfigEntry("listener.security.protocol.map", "REPLICATION-9096:SSL,PLAIN-9092:SASL_PLAINTEXT,TLS-9093:SSL"));
     }
 
     @Test

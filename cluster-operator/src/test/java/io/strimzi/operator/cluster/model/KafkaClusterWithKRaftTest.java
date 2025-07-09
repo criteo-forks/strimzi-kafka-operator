@@ -636,7 +636,7 @@ public class KafkaClusterWithKRaftTest {
         // Brokers
         ports = kc.getContainerPortList(KAFKA_POOL_BROKERS);
         assertThat(ports.size(), is(4));
-        assertThat(ports.get(0).getContainerPort(), is(9091));
+        assertThat(ports.get(0).getContainerPort(), is(9096));
         assertThat(ports.get(1).getContainerPort(), is(9093));
         assertThat(ports.get(2).getContainerPort(), is(9094));
         assertThat(ports.get(3).getContainerPort(), is(9404));

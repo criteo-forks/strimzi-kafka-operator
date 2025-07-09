@@ -59,7 +59,7 @@ import java.util.stream.Collectors;
  */
 public class KafkaBrokerConfigurationBuilder {
     private final static String CONTROL_PLANE_LISTENER_NAME = "CONTROLPLANE-9090";
-    private final static String REPLICATION_LISTENER_NAME = "REPLICATION-9091";
+    private final static String REPLICATION_LISTENER_NAME = "REPLICATION-9096";
 
     // Names of environment variables placeholders replaced only in the running container
     private final static String PLACEHOLDER_CERT_STORE_PASSWORD = "${CERTS_STORE_PASSWORD}";
@@ -133,7 +133,7 @@ public class KafkaBrokerConfigurationBuilder {
             writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_SSL_ENDPOINT_ID_ALGO + "=HTTPS");
             // using the brokers service because the Admin client, in the Cruise Control metrics reporter, is not able to connect
             // to the pods behind the bootstrap one when they are not ready during startup.
-            writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_BOOTSTRAP_SERVERS + "=" + KafkaResources.brokersServiceName(clusterName) + ":9091");
+            writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_BOOTSTRAP_SERVERS + "=" + KafkaResources.brokersServiceName(clusterName) + ":9096");
             writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_SECURITY_PROTOCOL + "=SSL");
             writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_SSL_KEYSTORE_TYPE + "=PKCS12");
             writer.println(CruiseControlConfigurationParameters.METRICS_REPORTER_SSL_KEYSTORE_LOCATION + "=/tmp/kafka/cluster.keystore.p12");
@@ -1094,7 +1094,7 @@ public class KafkaBrokerConfigurationBuilder {
 
         writer.println("remote.log.metadata.manager.listener.name=" + metadataListenerName);
         writer.println("rlmm.config.remote.log.metadata.common.client.bootstrap.servers="
-            + clusterName + "-kafka-brokers:9091");
+            + clusterName + "-kafka-brokers:9096");
         writer.println("rlmm.config.remote.log.metadata.common.client.security.protocol=SSL");
         writer.println("rlmm.config.remote.log.metadata.common.client.ssl.keystore.location=/tmp/kafka/cluster.keystore.p12");
         writer.println("rlmm.config.remote.log.metadata.common.client.ssl.keystore.password=${CERTS_STORE_PASSWORD}");
@@ -1170,7 +1170,7 @@ public class KafkaBrokerConfigurationBuilder {
         writer.println("client.quota.callback.class=io.strimzi.kafka.quotas.StaticQuotaCallback");
 
         // For external ZooKeeper, use first internal listener; for internal ZooKeeper, use replication listener
-        String adminPort = "9091";
+        String adminPort = "9096";
         if (kafkaListeners != null) {
             String interBrokerListener = findInterBrokerListenerName(kafkaListeners);
             if (interBrokerListener != null) {

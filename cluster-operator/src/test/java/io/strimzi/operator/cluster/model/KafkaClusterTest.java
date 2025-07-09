@@ -748,7 +748,7 @@ public class KafkaClusterTest {
         assertThat(config, CoreMatchers.containsString("broker.id=1"));
         assertThat(config, CoreMatchers.containsString("node.id=1"));
         assertThat(config, CoreMatchers.containsString("log.dirs=/var/lib/kafka/data-0/kafka-log1"));
-        assertThat(config, CoreMatchers.containsString("advertised.listeners=CONTROLPLANE-9090://foo-kafka-1.foo-kafka-brokers.test.svc:9090,REPLICATION-9091://foo-kafka-1.foo-kafka-brokers.test.svc:9091,PLAIN-9092://broker-1:9092,TLS-9093://broker-1:10001\n"));
+        assertThat(config, CoreMatchers.containsString("advertised.listeners=CONTROLPLANE-9090://foo-kafka-1.foo-kafka-brokers.test.svc:9090,REPLICATION-9096://foo-kafka-1.foo-kafka-brokers.test.svc:9096,PLAIN-9092://broker-1:9092,TLS-9093://broker-1:10001\n"));
     }
 
     @ParallelTest
