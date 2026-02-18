@@ -1,0 +1,135 @@
+name: CD Workflow - Build and Release Docker Images
+
+# CD is auto-triggered on push events to the criteo-0.45.x branch (PR merged or git tag)
+# CD can be manually triggered with a specific commit SHA (please publish alternative)
+# See step "Determine Image Tags" for how the image tag is determined based on the event
+on:
+  push:
+    branches:
+      - criteo-0.45.x
+    tags:
+      - 'criteo-0.45.*'
+  pull_request:
+    branches:
+      - criteo-0.45.x
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to build'
+        required: true
+
+jobs:
+  build-and-release:
+    # For pull_request events, only run if the PR is merged.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_NAME: strimzi-kafka-operator
+      DOCKER_REGISTRY: ghcr.io
+      DOCKER_ORG: ${{ github.repository_owner }}
+
+    steps:
+      - name: Determine checkout ref based on event
+        id: set_checkout_ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "checkout_ref=${{ github.event.inputs.commit_sha }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "checkout_ref=${{ github.event.pull_request.head.ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "checkout_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.set_checkout_ref.outputs.checkout_ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: maven
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Build with Maven
+        run: mvn -B -V -e -Dfindbugs.skip -Dcheckstyle.skip -Dpmd.skip=true -Denforcer.skip -Dmaven.javadoc.skip -DskipTests -Dmaven.test.skip.exec -Dlicense.skip=true -Drat.skip=true clean install
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v2
+        with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Maven Build and Install JAR files
+        working-directory: docker-images/artifacts
+        run: make java_install
+
+      - name: Build Docker Images
+        working-directory: docker-images
+        run: make docker_build
+
+      # Based on triggering event, determine the image tag to use
+      # - For PR merge: use the commit SHA + 'latest'
+      # - For git tag push: use the tag name + 'stable'
+      # - For branch push: use the commit SHA + 'latest'
+      # - For manual trigger: use the provided commit SHA
+      # Determine image tag values to be used by the Makefile.
+      # We output two variables:
+      # - BUILD_TAG: For branch push or PR merge, it's the commit SHA; for tag push, it's the git tag; for manual trigger, it's the provided commit SHA.
+      # - DOCKER_TAG: For branch push and PR merge, we use "latest"; for tag push, we use "stable"; for manual trigger, leave it empty.
+      - name: Determine Image Tags
+        id: image_tags
+        run: |
+          echo "BUILD_TAG=latest" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -z "${{ github.event.inputs.commit_sha }}" ]; then
+              echo "Error: commit_sha input is required" >&2
+              exit 1
+            fi
+            COMMIT=${{ github.event.inputs.commit_sha }}
+            echo "Detected manual trigger with commit: $COMMIT"
+            echo "DOCKER_TAG_SHA=$COMMIT" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            echo "Detected tag push: $TAG_NAME"
+            echo "DOCKER_TAG_SHA=$TAG_NAME" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=stable" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "Detected pull_request merged event"
+            echo "DOCKER_TAG_SHA=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=latest" >> $GITHUB_OUTPUT
+          else
+            echo "Detected branch push: ${GITHUB_REF}"
+            echo "DOCKER_TAG_SHA=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            echo "DOCKER_TAG=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Tag Docker Image using Makefile (SHA Tag)
+        run: make docker_tag DOCKER_TAG=${{ steps.image_tags.outputs.DOCKER_TAG_SHA }} BUILD_TAG=${{ steps.image_tags.outputs.BUILD_TAG }}
+
+      - name: Tag Docker Image using Makefile (Extra Tag - latest/stable)
+        if: ${{ steps.image_tags.outputs.DOCKER_TAG != '' }}
+        run: make docker_tag DOCKER_TAG=${{ steps.image_tags.outputs.DOCKER_TAG }} BUILD_TAG=${{ steps.image_tags.outputs.BUILD_TAG }}
+
+      - name: Push Docker Image using Makefile (SHA Tag)
+        run: make docker_push DOCKER_TAG=${{ steps.image_tags.outputs.DOCKER_TAG_SHA }} BUILD_TAG=${{ steps.image_tags.outputs.BUILD_TAG }}
+
+      - name: Push Docker Image using Makefile (Extra Tag = latest/stable)
+        if: ${{ steps.image_tags.outputs.DOCKER_TAG != '' }}
+        run: make docker_push DOCKER_TAG=${{ steps.image_tags.outputs.DOCKER_TAG }} BUILD_TAG=${{ steps.image_tags.outputs.BUILD_TAG }}
