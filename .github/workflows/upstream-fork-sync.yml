@@ -1,5 +1,5 @@
-# This workflow keeps out `upstream` branch always in-sync with upstream `main` branch
-# Fetches changes every morning, and only apply them if possible Fast-Forward.
+# This workflow keeps our `upstream` branch always in-sync with upstream `main` branch
+# Fetches changes every morning, and only applies them if possible Fast-Forward.
 on:
   schedule:
     - cron:  '0 8 * * 1-5'
@@ -12,25 +12,17 @@ jobs:
 
     steps:
     - name: Checkout our upstream branch
-      uses: actions/checkout@v2
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
       with:
         ref: upstream
+        fetch-depth: 0
 
     - name: Pull (Fast-Forward) upstream changes
-      id: sync
-      uses: aormsby/Fork-Sync-With-Upstream-action@v2.1
-      with:
-        upstream_repository: strimzi/strimzi-kafka-operator
-        upstream_branch: main
-        target_branch: upstream
-        git_getch_args: --tags     # we want to fetch tags
-        git_pull_args: --ff-only   # always Fast-Forward, should always pass
-        
-    # Display a message if 'sync' step had new commits
-    - name: Check for new commits
-      if: steps.sync.outputs.has_new_commits
-      run: echo "There were new commits."
+      run: |
+        git remote add upstream https://github.com/strimzi/strimzi-kafka-operator.git
+        git fetch upstream main --tags
+        git merge --ff-only upstream/main
+        git push origin upstream --tags
 
-    # Print a helpful timestamp for later auditing
     - name: Timestamp
       run: date
