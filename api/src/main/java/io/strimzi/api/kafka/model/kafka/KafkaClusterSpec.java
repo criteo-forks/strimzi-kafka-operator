@@ -49,7 +49,7 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
     "version", "metadataVersion", "replicas", "image", "listeners", "config", "storage", "authorization", "rack",
-    "brokerRackInitImage", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
+    "brokerRackInitImage", "serviceAccountName", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
     "logging", "template", "tieredStorage", "quotas"})
 @EqualsAndHashCode
 @ToString
@@ -78,6 +78,7 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
     private Logging logging;
     private Integer replicas;
     private String image;
+    private String serviceAccountName;
     private ResourceRequirements resources;
     private Probe livenessProbe;
     private Probe readinessProbe;
@@ -188,6 +189,17 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
 
     public void setImage(String image) {
         this.image = image;
+    }
+
+    @Description("The name of the service account used by the Kafka pods. " +
+            "If not set, the default Kafka service account for the cluster will be used.")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public String getServiceAccountName() {
+        return serviceAccountName;
+    }
+
+    public void setServiceAccountName(String serviceAccountName) {
+        this.serviceAccountName = serviceAccountName;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

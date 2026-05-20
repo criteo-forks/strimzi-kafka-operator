@@ -270,6 +270,91 @@ public class KafkaClusterTest {
     //////////
 
     @ParallelTest
+    public void testKafkaServiceAccountNameDefaultsToKafkaComponentName() {
+        List<StrimziPodSet> podSets = KC.generatePodSets(true, null, null, node -> Map.of());
+
+        podSets.forEach(podSet -> PodSetUtils.podSetToPods(podSet).forEach(pod ->
+                assertThat(pod.getSpec().getServiceAccountName(), is(KafkaResources.kafkaComponentName(CLUSTER)))));
+    }
+
+    @ParallelTest
+    public void testKafkaServiceAccountNameCanBeConfiguredOnKafkaCluster() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withServiceAccountName("kafkabroker")
+                    .endKafka()
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_CONTROLLERS, POOL_MIXED, POOL_BROKERS), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+
+        List<StrimziPodSet> podSets = kc.generatePodSets(true, null, null, node -> Map.of());
+
+        podSets.forEach(podSet -> PodSetUtils.podSetToPods(podSet).forEach(pod ->
+                assertThat(pod.getSpec().getServiceAccountName(), is("kafkabroker"))));
+    }
+
+    @ParallelTest
+    public void testKafkaServiceAccountNameCanBeOverriddenOnKafkaNodePool() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withServiceAccountName("kafkabroker")
+                    .endKafka()
+                .endSpec()
+                .build();
+        KafkaNodePool brokers = new KafkaNodePoolBuilder(POOL_BROKERS)
+                .editSpec()
+                    .withServiceAccountName("kafkabrokerb")
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_CONTROLLERS, POOL_MIXED, brokers), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+
+        List<StrimziPodSet> podSets = kc.generatePodSets(true, null, null, node -> Map.of());
+
+        podSets.forEach(podSet -> PodSetUtils.podSetToPods(podSet).forEach(pod -> {
+            if (pod.getMetadata().getName().startsWith(CLUSTER + "-brokers-")) {
+                assertThat(pod.getSpec().getServiceAccountName(), is("kafkabrokerb"));
+            } else {
+                assertThat(pod.getSpec().getServiceAccountName(), is("kafkabroker"));
+            }
+        }));
+    }
+
+    @ParallelTest
+    public void testClusterRoleBindingUsesEffectiveKafkaServiceAccountNames() {
+        String testNamespace = "other-namespace";
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editMetadata()
+                    .withNamespace(testNamespace)
+                .endMetadata()
+                .editSpec()
+                    .editKafka()
+                        .withServiceAccountName("kafkabroker")
+                        .withNewRack("my-topology-label")
+                    .endKafka()
+                .endSpec()
+                .build();
+        KafkaNodePool brokers = new KafkaNodePoolBuilder(POOL_BROKERS)
+                .editMetadata()
+                    .withNamespace(testNamespace)
+                .endMetadata()
+                .editSpec()
+                    .withServiceAccountName("kafkabrokerb")
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_CONTROLLERS, POOL_MIXED, brokers), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+
+        ClusterRoleBinding crb = kc.generateClusterRoleBinding(testNamespace);
+
+        assertThat(crb.getSubjects().stream().map(subject -> subject.getName()).collect(Collectors.toList()), containsInAnyOrder("kafkabroker", "kafkabrokerb"));
+        crb.getSubjects().forEach(subject -> assertThat(subject.getNamespace(), is(testNamespace)));
+    }
+
+    @ParallelTest
     public void testMetricsConfigMap() {
         ConfigMap metricsCm = io.strimzi.operator.cluster.TestUtils.getJmxMetricsCm("{\"animal\":\"wombat\"}", "kafka-metrics-config", "kafka-metrics-config.yml");
         Kafka kafkaAssembly = new KafkaBuilder(KAFKA)
