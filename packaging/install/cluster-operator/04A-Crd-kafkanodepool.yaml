@@ -235,6 +235,9 @@ spec:
                           description: The system property value.
                     description: A map of additional system properties which will be passed using the `-D` option to the JVM.
                 description: JVM Options for pods.
+              serviceAccountName:
+                type: string
+                description: "The name of the service account used by the pods in this pool. If not set, the Kafka cluster service account is used."
               template:
                 type: object
                 properties:

@@ -29,7 +29,7 @@ import java.util.List;
         builderPackage = Constants.FABRIC8_KUBERNETES_API
 )
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"replicas", "storage", "roles", "resources", "jvmOptions", "template"})
+@JsonPropertyOrder({"replicas", "storage", "roles", "resources", "jvmOptions", "serviceAccountName", "template"})
 @EqualsAndHashCode(callSuper = true)
 @ToString(callSuper = true)
 public class KafkaNodePoolSpec extends Spec {
@@ -38,6 +38,7 @@ public class KafkaNodePoolSpec extends Spec {
     private List<ProcessRoles> roles;
     private ResourceRequirements resources;
     private JvmOptions jvmOptions;
+    private String serviceAccountName;
     private KafkaNodePoolTemplate template;
 
     @Description("The number of pods in the pool.")
@@ -93,6 +94,17 @@ public class KafkaNodePoolSpec extends Spec {
 
     public void setJvmOptions(JvmOptions jvmOptions) {
         this.jvmOptions = jvmOptions;
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @Description("The name of the service account used by the pods in this pool. " +
+            "If not set, the Kafka cluster service account is used.")
+    public String getServiceAccountName() {
+        return serviceAccountName;
+    }
+
+    public void setServiceAccountName(String serviceAccountName) {
+        this.serviceAccountName = serviceAccountName;
     }
 
     @Description("Template for pool resources. " +

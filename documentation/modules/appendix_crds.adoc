@@ -100,6 +100,9 @@ include::../api/io.strimzi.api.kafka.model.kafka.KafkaClusterSpec.adoc[leveloffs
 |brokerRackInitImage
 |string
 |The image of the init container used for initializing the `broker.rack`.
+|serviceAccountName
+|string
+|The name of the service account used by the Kafka pods. If not set, the default Kafka service account for the cluster will be used.
 |livenessProbe
 |xref:type-Probe-{context}[`Probe`]
 |Pod liveness checking.
@@ -4592,6 +4595,9 @@ Used in: xref:type-KafkaNodePool-{context}[`KafkaNodePool`]
 |jvmOptions
 |xref:type-JvmOptions-{context}[`JvmOptions`]
 |JVM Options for pods.
+|serviceAccountName
+|string
+|The name of the service account used by the pods in this pool. If not set, the Kafka cluster service account is used.
 |template
 |xref:type-KafkaNodePoolTemplate-{context}[`KafkaNodePoolTemplate`]
 |Template for pool resources. The template allows users to specify how the resources belonging to this pool are generated.

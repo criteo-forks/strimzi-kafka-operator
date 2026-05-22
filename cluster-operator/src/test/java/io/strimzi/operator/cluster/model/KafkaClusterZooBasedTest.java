@@ -240,6 +240,24 @@ public class KafkaClusterZooBasedTest {
     //////////
 
     @ParallelTest
+    public void testKafkaServiceAccountNameCanBeConfiguredOnZooBasedKafkaCluster() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withServiceAccountName("kafkabroker")
+                    .endKafka()
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+
+        List<StrimziPodSet> podSets = kc.generatePodSets(true, null, null, node -> Map.of());
+
+        podSets.forEach(podSet -> PodSetUtils.podSetToPods(podSet).forEach(pod ->
+                assertThat(pod.getSpec().getServiceAccountName(), is("kafkabroker"))));
+    }
+
+    @ParallelTest
     public void testMetricsConfigMap() {
         ConfigMap metricsCm = io.strimzi.operator.cluster.TestUtils.getJmxMetricsCm("{\"animal\":\"wombat\"}", "kafka-metrics-config", "kafka-metrics-config.yml");
 
@@ -3901,7 +3919,7 @@ public class KafkaClusterZooBasedTest {
         Kafka kafka = new KafkaBuilder(KAFKA)
                 .editSpec()
                     .editKafka()
-                        .withVersion("3.9.0")
+                        .withVersion("3.9.1")
                         .withConfig(config)
                     .endKafka()
                 .endSpec()
@@ -3930,7 +3948,7 @@ public class KafkaClusterZooBasedTest {
         Kafka kafka = new KafkaBuilder(KAFKA)
                 .editSpec()
                     .editKafka()
-                        .withVersion("3.9.0")
+                        .withVersion("3.9.1")
                         .withMetadataVersion("3.6-IV2")
                         .withConfig(Map.of())
                     .endKafka()
@@ -3963,7 +3981,7 @@ public class KafkaClusterZooBasedTest {
         Kafka kafka = new KafkaBuilder(KAFKA)
                 .editSpec()
                     .editKafka()
-                        .withVersion("3.9.0")
+                        .withVersion("3.9.1")
                         .withMetadataVersion("3.9-IV0")
                         .withConfig(config)
                 .endKafka()

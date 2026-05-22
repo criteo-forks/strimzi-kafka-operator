@@ -1198,7 +1198,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                             namespace,
                             pool.labels.withStrimziBrokerRole(node.broker()).withStrimziControllerRole(node.controller()),
                             pool.componentName,
-                            componentName,
+                            effectiveServiceAccountName(pool),
                             pool.templatePod,
                             DEFAULT_POD_LABELS,
                             podAnnotationsProvider.apply(node),
@@ -1650,11 +1650,15 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
      */
     public ClusterRoleBinding generateClusterRoleBinding(String assemblyNamespace) {
         if (rack != null || isExposedWithNodePort()) {
-            Subject subject = new SubjectBuilder()
-                    .withKind("ServiceAccount")
-                    .withName(componentName)
-                    .withNamespace(assemblyNamespace)
-                    .build();
+            List<Subject> subjects = nodePools.stream()
+                    .map(this::effectiveServiceAccountName)
+                    .distinct()
+                    .map(name -> new SubjectBuilder()
+                            .withKind("ServiceAccount")
+                            .withName(name)
+                            .withNamespace(assemblyNamespace)
+                            .build())
+                    .toList();
 
             RoleRef roleRef = new RoleRefBuilder()
                     .withName("strimzi-kafka-broker")
@@ -1663,10 +1667,14 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                     .build();
 
             return RbacUtils
-                    .createClusterRoleBinding(KafkaResources.initContainerClusterRoleBindingName(cluster, namespace), roleRef, List.of(subject), labels, templateInitClusterRoleBinding);
+                    .createClusterRoleBinding(KafkaResources.initContainerClusterRoleBindingName(cluster, namespace), roleRef, subjects, labels, templateInitClusterRoleBinding);
         } else {
             return null;
         }
+    }
+
+    private String effectiveServiceAccountName(KafkaPool pool) {
+        return pool.getServiceAccountName() != null ? pool.getServiceAccountName() : componentName;
     }
 
     /**
