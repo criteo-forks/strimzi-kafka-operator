@@ -604,6 +604,10 @@ public class KafkaAssemblyOperator extends AbstractAssemblyOperator<KubernetesCl
          * @return      Future with Reconciliation State
          */
         Future<ReconciliationState> reconcileZooKeeper(Clock clock)    {
+            if (kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null) {
+                return Future.succeededFuture(this);
+            }
+
             return zooKeeperReconciler()
                     .compose(reconciler -> reconciler.reconcile(kafkaStatus, clock))
                     .map(this);

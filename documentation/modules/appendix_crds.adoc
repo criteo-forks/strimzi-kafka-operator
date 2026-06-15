@@ -88,6 +88,9 @@ include::../api/io.strimzi.api.kafka.model.kafka.KafkaClusterSpec.adoc[leveloffs
 |config
 |map
 |Kafka broker config properties with the following prefixes cannot be set: listeners, advertised., broker., listener., host.name, port, inter.broker.listener.name, sasl., ssl., security., password., log.dir, zookeeper.connect, zookeeper.set.acl, zookeeper.ssl, zookeeper.clientCnxnSocket, authorizer., super.user, cruise.control.metrics.topic, cruise.control.metrics.reporter.bootstrap.servers, node.id, process.roles, controller., metadata.log.dir, zookeeper.metadata.migration.enable, client.quota.callback.static.kafka.admin., client.quota.callback.static.produce, client.quota.callback.static.fetch, client.quota.callback.static.storage.per.volume.limit.min.available., client.quota.callback.static.excluded.principal.name.list (with the exception of: zookeeper.connection.timeout.ms, sasl.server.max.receive.size, ssl.cipher.suites, ssl.protocol, ssl.enabled.protocols, ssl.secure.random.implementation, cruise.control.metrics.topic.num.partitions, cruise.control.metrics.topic.replication.factor, cruise.control.metrics.topic.retention.ms, cruise.control.metrics.topic.auto.create.retries, cruise.control.metrics.topic.auto.create.timeout.ms, cruise.control.metrics.topic.min.insync.replicas, controller.quorum.election.backoff.max.ms, controller.quorum.election.timeout.ms, controller.quorum.fetch.timeout.ms).
+|externalZooKeeper
+|xref:type-ExternalZooKeeperSpec-{context}[`ExternalZooKeeperSpec`]
+|Configuration for connecting Kafka brokers to an external ZooKeeper ensemble instead of deploying a Strimzi-managed ZooKeeper cluster.
 |storage
 |xref:type-EphemeralStorage-{context}[`EphemeralStorage`], xref:type-PersistentClaimStorage-{context}[`PersistentClaimStorage`], xref:type-JbodStorage-{context}[`JbodStorage`]
 |Storage configuration (disk). Cannot be updated. This property is required when node pools are not used.
@@ -350,7 +353,7 @@ It must have the value `oauth` for the type `KafkaListenerAuthenticationOAuth`.
 [id='type-GenericSecretSource-{context}']
 = `GenericSecretSource` schema reference
 
-Used in: xref:type-KafkaClientAuthenticationOAuth-{context}[`KafkaClientAuthenticationOAuth`], xref:type-KafkaListenerAuthenticationCustom-{context}[`KafkaListenerAuthenticationCustom`], xref:type-KafkaListenerAuthenticationOAuth-{context}[`KafkaListenerAuthenticationOAuth`]
+Used in: xref:type-ExternalZooKeeperAuthenticationDigest-{context}[`ExternalZooKeeperAuthenticationDigest`], xref:type-KafkaClientAuthenticationOAuth-{context}[`KafkaClientAuthenticationOAuth`], xref:type-KafkaListenerAuthenticationCustom-{context}[`KafkaListenerAuthenticationCustom`], xref:type-KafkaListenerAuthenticationOAuth-{context}[`KafkaListenerAuthenticationOAuth`]
 
 
 [cols="2,2,3a",options="header"]
@@ -621,6 +624,49 @@ include::../api/io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerCo
 |externalIPs
 |string array
 |External IPs associated to the nodeport service. These IPs are used by clients external to the Kubernetes cluster to access the Kafka brokers. This field is helpful when `nodeport` without `externalIP` is not sufficient. For example on bare-metal Kubernetes clusters that do not support Loadbalancer service types. This field can only be used with `nodeport` type listener.
+|====
+
+[id='type-ExternalZooKeeperSpec-{context}']
+= `ExternalZooKeeperSpec` schema reference
+
+Used in: xref:type-KafkaClusterSpec-{context}[`KafkaClusterSpec`]
+
+
+[cols="2,2,3a",options="header"]
+|====
+|Property |Property type |Description
+|connect
+|string
+|Connection string for the external ZooKeeper ensemble, including the ZooKeeper chroot.
+|tls
+|boolean
+|Whether TLS encryption should be used when connecting to ZooKeeper. TLS for external ZooKeeper is not supported yet.
+|authentication
+|xref:type-ExternalZooKeeperAuthenticationDigest-{context}[`ExternalZooKeeperAuthenticationDigest`]
+|Digest authentication configuration for connecting to the external ZooKeeper ensemble.
+|config
+|map
+|Additional ZooKeeper client configuration properties.
+|====
+
+[id='type-ExternalZooKeeperAuthenticationDigest-{context}']
+= `ExternalZooKeeperAuthenticationDigest` schema reference
+
+Used in: xref:type-ExternalZooKeeperSpec-{context}[`ExternalZooKeeperSpec`]
+
+
+[cols="2,2,3a",options="header"]
+|====
+|Property |Property type |Description
+|type
+|string
+|Must be `digest`.
+|username
+|string
+|Username used for ZooKeeper Digest authentication.
+|jaasConfig
+|xref:type-GenericSecretSource-{context}[`GenericSecretSource`]
+|Reference to the `Secret` key containing the ZooKeeper client JAAS configuration file.
 |====
 
 [id='type-EphemeralStorage-{context}']

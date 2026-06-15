@@ -8,6 +8,7 @@ import io.strimzi.api.kafka.model.common.CertSecretSource;
 import io.strimzi.api.kafka.model.common.CertSecretSourceBuilder;
 import io.strimzi.api.kafka.model.common.Rack;
 import io.strimzi.api.kafka.model.kafka.EphemeralStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpecBuilder;
 import io.strimzi.api.kafka.model.kafka.JbodStorageBuilder;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorization;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationKeycloakBuilder;
@@ -64,6 +65,7 @@ import static org.hamcrest.Matchers.equalTo;
 
 
 @ParallelSuite
+@SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling"})
 public class KafkaBrokerConfigurationBuilderTest {
     private final static NodeRef NODE_REF = new NodeRef("my-cluster-kafka-2", 2, "kafka", false, true);
 
@@ -283,6 +285,28 @@ public class KafkaBrokerConfigurationBuilderTest {
                 "zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12",
                 "zookeeper.ssl.truststore.password=${strimzienv:CERTS_STORE_PASSWORD}",
                 "zookeeper.ssl.truststore.type=PKCS12"));
+    }
+
+    @ParallelTest
+    public void testExternalZookeeperConfig()  {
+        String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withExternalZooKeeper(new ExternalZooKeeperSpecBuilder()
+                        .withConnect("zk-0.example.com:2181,zk-1.example.com:2181,zk-2.example.com:2181/kafka")
+                        .withConfig(Map.of(
+                                "zookeeper.session.timeout.ms", "60000",
+                                "zookeeper.connection.timeout.ms", "1000000",
+                                "zookeeper.set.acl", "true"))
+                        .build())
+                .build();
+
+        assertThat(configuration, isEquivalent("broker.id=2",
+                "node.id=2",
+                "zookeeper.connect=zk-0.example.com:2181,zk-1.example.com:2181,zk-2.example.com:2181/kafka",
+                "zookeeper.connection.timeout.ms=1000000",
+                "zookeeper.session.timeout.ms=60000",
+                "zookeeper.set.acl=true"));
+        assertThat(configuration, not(containsString("zookeeper.ssl.")));
+        assertThat(configuration, not(containsString("zookeeper.clientCnxnSocket")));
     }
 
     @ParallelTest

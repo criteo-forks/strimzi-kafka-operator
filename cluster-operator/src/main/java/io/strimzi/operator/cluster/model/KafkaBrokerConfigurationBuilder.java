@@ -7,6 +7,7 @@ package io.strimzi.operator.cluster.model;
 import io.fabric8.kubernetes.api.model.VolumeMount;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
 import io.strimzi.api.kafka.model.common.Rack;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpec;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorization;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationCustom;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationKeycloak;
@@ -44,6 +45,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -181,6 +183,24 @@ public class KafkaBrokerConfigurationBuilder {
         writer.println("zookeeper.ssl.truststore.location=/tmp/kafka/cluster.truststore.p12");
         writer.println("zookeeper.ssl.truststore.password=" + PLACEHOLDER_CERT_STORE_PASSWORD);
         writer.println("zookeeper.ssl.truststore.type=PKCS12");
+        writer.println();
+
+        return this;
+    }
+
+    /**
+     * Configures the connection URL and client properties for an external ZooKeeper ensemble.
+     *
+     * @param externalZooKeeper External ZooKeeper configuration from the Kafka custom resource
+     *
+     * @return Returns the builder instance
+     */
+    public KafkaBrokerConfigurationBuilder withExternalZooKeeper(ExternalZooKeeperSpec externalZooKeeper)  {
+        printSectionHeader("Zookeeper");
+        writer.println(String.format("zookeeper.connect=%s", externalZooKeeper.getConnect()));
+        if (externalZooKeeper.getConfig() != null) {
+            new TreeMap<>(externalZooKeeper.getConfig()).forEach((key, value) -> writer.println(key + "=" + value));
+        }
         writer.println();
 
         return this;
