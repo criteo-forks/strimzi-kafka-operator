@@ -65,6 +65,8 @@ import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
 import io.strimzi.api.kafka.model.common.template.IpFamily;
 import io.strimzi.api.kafka.model.common.template.IpFamilyPolicy;
 import io.strimzi.api.kafka.model.kafka.EphemeralStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpec;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpecBuilder;
 import io.strimzi.api.kafka.model.kafka.JbodStorageBuilder;
 import io.strimzi.api.kafka.model.kafka.Kafka;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationKeycloakBuilder;
@@ -226,6 +228,39 @@ public class KafkaClusterZooBasedTest {
         assertThat(headless.getMetadata().getLabels().containsKey(Labels.STRIMZI_DISCOVERY_LABEL), is(false));
     }
 
+    private ExternalZooKeeperSpec externalZooKeeper() {
+        return new ExternalZooKeeperSpecBuilder()
+                .withConnect("zk-0.example.com:2181,zk-1.example.com:2181,zk-2.example.com:2181/kafka")
+                .withNewAuthentication()
+                    .withUsername("kafka")
+                    .withJaasConfig(new GenericSecretSourceBuilder()
+                            .withSecretName("external-zookeeper-secret")
+                            .withKey("zookeeper-jaas.conf")
+                            .build())
+                .endAuthentication()
+                .withConfig(Map.of(
+                        "zookeeper.session.timeout.ms", "60000",
+                        "zookeeper.connection.timeout.ms", "1000000",
+                        "zookeeper.set.acl", "true"))
+                .build();
+    }
+
+    private Kafka externalZooKeeperKafka() {
+        return externalZooKeeperKafka(externalZooKeeper());
+    }
+
+    private Kafka externalZooKeeperKafka(ExternalZooKeeperSpec externalZooKeeper) {
+        return new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .withZookeeper(null)
+                    .withEntityOperator(null)
+                    .editKafka()
+                        .withExternalZooKeeper(externalZooKeeper)
+                    .endKafka()
+                .endSpec()
+                .build();
+    }
+
     private Secret generateBrokerSecret(Set<String> externalBootstrapAddress, Map<Integer, Set<String>> externalAddresses) {
         ClusterCa clusterCa = new ClusterCa(Reconciliation.DUMMY_RECONCILIATION, new OpenSslCertManager(), new PasswordGenerator(10, "a", "a"), CLUSTER, null, null);
         clusterCa.createRenewOrReplace(NAMESPACE, emptyMap(), emptyMap(), emptyMap(), null, true);
@@ -255,6 +290,136 @@ public class KafkaClusterZooBasedTest {
 
         podSets.forEach(podSet -> PodSetUtils.podSetToPods(podSet).forEach(pod ->
                 assertThat(pod.getSpec().getServiceAccountName(), is("kafkabroker"))));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperPerBrokerConfiguration() {
+        Map<Integer, Map<String, String>> advertisedHostnames = Map.of(
+                0, Map.of("PLAIN_9092", "broker-0", "TLS_9093", "broker-0"),
+                1, Map.of("PLAIN_9092", "broker-1", "TLS_9093", "broker-1"),
+                2, Map.of("PLAIN_9092", "broker-2", "TLS_9093", "broker-2")
+        );
+        Map<Integer, Map<String, String>> advertisedPorts = Map.of(
+                0, Map.of("PLAIN_9092", "9092", "TLS_9093", "10000"),
+                1, Map.of("PLAIN_9092", "9092", "TLS_9093", "10001"),
+                2, Map.of("PLAIN_9092", "9092", "TLS_9093", "10002")
+        );
+        Kafka kafka = externalZooKeeperKafka();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+
+        String brokerConfig = kc.generatePerBrokerConfiguration(1, advertisedHostnames, advertisedPorts);
+
+        assertThat(brokerConfig, containsString("zookeeper.connect=zk-0.example.com:2181,zk-1.example.com:2181,zk-2.example.com:2181/kafka"));
+        assertThat(brokerConfig, containsString("zookeeper.connection.timeout.ms=1000000"));
+        assertThat(brokerConfig, containsString("zookeeper.session.timeout.ms=60000"));
+        assertThat(brokerConfig, containsString("zookeeper.set.acl=true"));
+        assertThat(brokerConfig, not(containsString("zookeeper.ssl.")));
+        assertThat(brokerConfig, not(containsString("zookeeper.clientCnxnSocket")));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperDigestJaasSecretIsMountedInBrokerPods() {
+        Kafka kafka = externalZooKeeperKafka();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+
+        List<StrimziPodSet> podSets = kc.generatePodSets(true, null, null, node -> Map.of());
+        Pod pod = PodSetUtils.podSetToPods(podSets.get(0)).get(0);
+        Volume volume = pod.getSpec().getVolumes().stream()
+                .filter(vol -> KafkaCluster.EXTERNAL_ZOOKEEPER_AUTH_VOLUME.equals(vol.getName()))
+                .findFirst()
+                .orElseThrow();
+        Container kafkaContainer = pod.getSpec().getContainers().stream()
+                .filter(container -> "kafka".equals(container.getName()))
+                .findFirst()
+                .orElseThrow();
+        VolumeMount volumeMount = kafkaContainer.getVolumeMounts().stream()
+                .filter(mount -> KafkaCluster.EXTERNAL_ZOOKEEPER_AUTH_VOLUME.equals(mount.getName()))
+                .findFirst()
+                .orElseThrow();
+        EnvVar javaSystemProperties = kafkaContainer.getEnv().stream()
+                .filter(env -> "STRIMZI_JAVA_SYSTEM_PROPERTIES".equals(env.getName()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(volume.getSecret().getSecretName(), is("external-zookeeper-secret"));
+        assertThat(volume.getSecret().getItems().get(0).getKey(), is("zookeeper-jaas.conf"));
+        assertThat(volume.getSecret().getItems().get(0).getPath(), is("zookeeper-jaas.conf"));
+        assertThat(volumeMount.getMountPath(), is("/opt/kafka/external-zookeeper-auth"));
+        assertThat(javaSystemProperties.getValue(), containsString("-Djava.security.auth.login.config=/opt/kafka/external-zookeeper-auth/zookeeper-jaas.conf"));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperCannotBeUsedWithManagedZooKeeper() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withExternalZooKeeper(externalZooKeeper())
+                    .endKafka()
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+
+        InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER));
+
+        assertThat(ex.getMessage(), containsString("spec.zookeeper and spec.kafka.externalZooKeeper cannot be used together"));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperRequiresChroot() {
+        ExternalZooKeeperSpec externalZooKeeper = new ExternalZooKeeperSpecBuilder(externalZooKeeper())
+                .withConnect("zk-0.example.com:2181,zk-1.example.com:2181,zk-2.example.com:2181")
+                .build();
+        Kafka kafka = externalZooKeeperKafka(externalZooKeeper);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+
+        InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER));
+
+        assertThat(ex.getMessage(), containsString("spec.kafka.externalZooKeeper.connect must include a ZooKeeper chroot"));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperTlsRejectedUntilSupported() {
+        ExternalZooKeeperSpec externalZooKeeper = new ExternalZooKeeperSpecBuilder(externalZooKeeper())
+                .withTls(true)
+                .build();
+        Kafka kafka = externalZooKeeperKafka(externalZooKeeper);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+
+        InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER));
+
+        assertThat(ex.getMessage(), containsString("spec.kafka.externalZooKeeper.tls is not supported yet"));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperRejectsUnknownClientConfig() {
+        ExternalZooKeeperSpec externalZooKeeper = new ExternalZooKeeperSpecBuilder(externalZooKeeper())
+                .withConfig(Map.of("zookeeper.unexpected.option", "true"))
+                .build();
+        Kafka kafka = externalZooKeeperKafka(externalZooKeeper);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+
+        InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER));
+
+        assertThat(ex.getMessage(), containsString("Unsupported spec.kafka.externalZooKeeper.config option: zookeeper.unexpected.option"));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperRejectsEntityOperator() {
+        Kafka kafka = new KafkaBuilder(externalZooKeeperKafka())
+                .editSpec()
+                    .withNewEntityOperator()
+                        .withNewTopicOperator()
+                        .endTopicOperator()
+                    .endEntityOperator()
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+
+        InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER));
+
+        assertThat(ex.getMessage(), containsString("spec.entityOperator is not supported with spec.kafka.externalZooKeeper"));
     }
 
     @ParallelTest

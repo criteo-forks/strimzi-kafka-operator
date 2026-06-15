@@ -40,6 +40,7 @@ import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteBuilder;
 import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
 import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.GenericSecretSource;
 import io.strimzi.api.kafka.model.common.Rack;
 import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
 import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
@@ -47,6 +48,8 @@ import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
 import io.strimzi.api.kafka.model.common.template.PodDisruptionBudgetTemplate;
 import io.strimzi.api.kafka.model.common.template.PodTemplate;
 import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperAuthenticationDigest;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpec;
 import io.strimzi.api.kafka.model.kafka.Kafka;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorization;
 import io.strimzi.api.kafka.model.kafka.KafkaAuthorizationKeycloak;
@@ -146,6 +149,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     protected static final String CLIENT_CA_CERTS_VOLUME_MOUNT = "/opt/kafka/client-ca-certs";
     protected static final String TRUSTED_CERTS_BASE_VOLUME_MOUNT = "/opt/kafka/certificates";
     protected static final String CUSTOM_AUTHN_SECRETS_VOLUME_MOUNT = "/opt/kafka/custom-authn-secrets";
+    protected static final String EXTERNAL_ZOOKEEPER_AUTH_VOLUME = "external-zookeeper-auth";
+    private static final String EXTERNAL_ZOOKEEPER_AUTH_VOLUME_MOUNT = "/opt/kafka/external-zookeeper-auth";
     private static final String LOG_AND_METRICS_CONFIG_VOLUME_NAME = "kafka-metrics-and-logging";
     private static final String LOG_AND_METRICS_CONFIG_VOLUME_MOUNT = "/opt/kafka/custom-config/";
 
@@ -210,8 +215,14 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
      * Key under which the class of the quota plugin can be configured
      */
     private static final String CLIENT_CALLBACK_CLASS_OPTION = "client.quota.callback.class";
+    private static final Set<String> ALLOWED_EXTERNAL_ZOOKEEPER_CONFIG_OPTIONS = Set.of(
+            "zookeeper.connection.timeout.ms",
+            "zookeeper.session.timeout.ms",
+            "zookeeper.set.acl"
+    );
 
     // Kafka configuration
+    private ExternalZooKeeperSpec externalZooKeeper;
     private Rack rack;
     private String initImage;
     private List<GenericKafkaListener> listeners;
@@ -318,10 +329,12 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         validateIntConfigProperty("offsets.topic.replication.factor", kafkaClusterSpec, numberOfBrokers);
         validateIntConfigProperty("transaction.state.log.replication.factor", kafkaClusterSpec, numberOfBrokers);
         validateIntConfigProperty("transaction.state.log.min.isr", kafkaClusterSpec, numberOfBrokers);
+        validateExternalZooKeeper(kafkaSpec, kafkaClusterSpec);
 
         result.image = versions.kafkaImage(kafkaClusterSpec.getImage(), kafkaClusterSpec.getVersion());
         result.readinessProbeOptions = ProbeUtils.extractReadinessProbeOptionsOrDefault(kafkaClusterSpec, ProbeUtils.DEFAULT_HEALTHCHECK_OPTIONS);
         result.livenessProbeOptions = ProbeUtils.extractLivenessProbeOptionsOrDefault(kafkaClusterSpec, ProbeUtils.DEFAULT_HEALTHCHECK_OPTIONS);
+        result.externalZooKeeper = kafkaClusterSpec.getExternalZooKeeper();
         result.rack = kafkaClusterSpec.getRack();
 
         String initImage = kafkaClusterSpec.getBrokerRackInitImage();
@@ -619,6 +632,74 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                 throw new InvalidResourceException("Property " + propertyName + " should be an integer");
             }
         }
+    }
+
+    private static void validateExternalZooKeeper(KafkaSpec kafkaSpec, KafkaClusterSpec kafkaClusterSpec) {
+        ExternalZooKeeperSpec externalZooKeeper = kafkaClusterSpec.getExternalZooKeeper();
+
+        if (externalZooKeeper == null) {
+            return;
+        }
+
+        validateExternalZooKeeperMode(kafkaSpec);
+        validateExternalZooKeeperConnect(externalZooKeeper);
+        validateExternalZooKeeperAuthentication(externalZooKeeper.getAuthentication());
+        validateExternalZooKeeperConfig(externalZooKeeper);
+    }
+
+    private static void validateExternalZooKeeperMode(KafkaSpec kafkaSpec) {
+        if (kafkaSpec.getZookeeper() != null) {
+            throw new InvalidResourceException("spec.zookeeper and spec.kafka.externalZooKeeper cannot be used together.");
+        }
+
+        if (kafkaSpec.getEntityOperator() != null) {
+            throw new InvalidResourceException("spec.entityOperator is not supported with spec.kafka.externalZooKeeper.");
+        }
+    }
+
+    private static void validateExternalZooKeeperConnect(ExternalZooKeeperSpec externalZooKeeper) {
+        if (externalZooKeeper.getConnect() == null || externalZooKeeper.getConnect().isBlank()) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.connect must be set.");
+        }
+
+        if (!hasZooKeeperChroot(externalZooKeeper.getConnect())) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.connect must include a ZooKeeper chroot.");
+        }
+
+        if (Boolean.TRUE.equals(externalZooKeeper.getTls())) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.tls is not supported yet.");
+        }
+    }
+
+    private static void validateExternalZooKeeperAuthentication(ExternalZooKeeperAuthenticationDigest authentication) {
+        if (authentication == null) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.authentication must be configured.");
+        }
+
+        if (authentication.getUsername() == null || authentication.getUsername().isBlank()) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.authentication.username must be set.");
+        }
+
+        GenericSecretSource jaasConfig = authentication.getJaasConfig();
+        if (jaasConfig == null || jaasConfig.getSecretName() == null || jaasConfig.getSecretName().isBlank()
+                || jaasConfig.getKey() == null || jaasConfig.getKey().isBlank()) {
+            throw new InvalidResourceException("spec.kafka.externalZooKeeper.authentication.jaasConfig must reference a Secret name and key.");
+        }
+    }
+
+    private static void validateExternalZooKeeperConfig(ExternalZooKeeperSpec externalZooKeeper) {
+        if (externalZooKeeper.getConfig() != null) {
+            for (String option : externalZooKeeper.getConfig().keySet()) {
+                if (!ALLOWED_EXTERNAL_ZOOKEEPER_CONFIG_OPTIONS.contains(option)) {
+                    throw new InvalidResourceException("Unsupported spec.kafka.externalZooKeeper.config option: " + option);
+                }
+            }
+        }
+    }
+
+    private static boolean hasZooKeeperChroot(String connect) {
+        int chrootStart = connect.indexOf('/');
+        return chrootStart > 0 && chrootStart < connect.length() - 1;
     }
 
     /**
@@ -1354,6 +1435,15 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                 volumeList.add(VolumeUtils.createEmptyDirVolume(INIT_VOLUME_NAME, "1Mi", "Memory"));
             }
 
+            if (isExternalZooKeeperDigestAuthenticationEnabled()) {
+                GenericSecretSource jaasConfig = externalZooKeeperJaasConfig();
+                volumeList.add(VolumeUtils.createSecretVolume(
+                        EXTERNAL_ZOOKEEPER_AUTH_VOLUME,
+                        jaasConfig.getSecretName(),
+                        Map.of(jaasConfig.getKey(), jaasConfig.getKey()),
+                        isOpenShift));
+            }
+
             // Listener specific volumes related to their specific authentication or encryption settings
             for (GenericKafkaListener listener : listeners) {
                 if (listener.isTls()
@@ -1443,6 +1533,10 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
             // Volume for sharing data with init container for rack awareness and node port listeners
             if (rack != null || isExposedWithNodePort()) {
                 volumeMountList.add(VolumeUtils.createVolumeMount(INIT_VOLUME_NAME, INIT_VOLUME_MOUNT));
+            }
+
+            if (isExternalZooKeeperDigestAuthenticationEnabled()) {
+                volumeMountList.add(VolumeUtils.createVolumeMount(EXTERNAL_ZOOKEEPER_AUTH_VOLUME, EXTERNAL_ZOOKEEPER_AUTH_VOLUME_MOUNT));
             }
 
             // Listener specific volumes related to their specific authentication or encryption settings
@@ -1603,6 +1697,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
 
         // Some environment variables are used only on nodes with broker role and are not needed on controller-only nodes
         if (pool.isBroker()) {
+            addExternalZooKeeperDigestJaasEnvVar(varList);
+
             for (GenericKafkaListener listener : listeners) {
                 if (ListenersUtils.isListenerWithOAuth(listener)) {
                     KafkaListenerAuthenticationOAuth oauth = (KafkaListenerAuthenticationOAuth) listener.getAuth();
@@ -1639,6 +1735,36 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         ContainerUtils.addContainerEnvsToExistingEnvs(reconciliation, varList, pool.templateContainer);
 
         return varList;
+    }
+
+    private boolean isExternalZooKeeperDigestAuthenticationEnabled() {
+        return externalZooKeeper != null
+                && externalZooKeeper.getAuthentication() != null
+                && externalZooKeeper.getAuthentication().getJaasConfig() != null;
+    }
+
+    private GenericSecretSource externalZooKeeperJaasConfig() {
+        return externalZooKeeper.getAuthentication().getJaasConfig();
+    }
+
+    private void addExternalZooKeeperDigestJaasEnvVar(List<EnvVar> varList) {
+        if (!isExternalZooKeeperDigestAuthenticationEnabled()) {
+            return;
+        }
+
+        String jaasPath = EXTERNAL_ZOOKEEPER_AUTH_VOLUME_MOUNT + "/" + externalZooKeeperJaasConfig().getKey();
+        String jaasProperty = "-Djava.security.auth.login.config=" + jaasPath;
+        EnvVar existingJavaSystemProperties = varList.stream()
+                .filter(env -> ENV_VAR_STRIMZI_JAVA_SYSTEM_PROPERTIES.equals(env.getName()))
+                .findFirst()
+                .orElse(null);
+
+        if (existingJavaSystemProperties != null) {
+            String existingValue = existingJavaSystemProperties.getValue();
+            existingJavaSystemProperties.setValue(existingValue == null || existingValue.isBlank() ? jaasProperty : existingValue + " " + jaasProperty);
+        } else {
+            varList.add(ContainerUtils.createEnvVar(ENV_VAR_STRIMZI_JAVA_SYSTEM_PROPERTIES, jaasProperty));
+        }
     }
 
     /**
@@ -1852,8 +1978,13 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     private void withZooKeeperOrKRaftConfiguration(KafkaPool pool, NodeRef node, KafkaBrokerConfigurationBuilder builder) {
         if ((node.broker() && this.kafkaMetadataConfigState.isZooKeeperToMigration()) ||
                 (node.controller() && this.kafkaMetadataConfigState.isPreMigrationToKRaft() && this.kafkaMetadataConfigState.isZooKeeperToPostMigration())) {
-            builder.withZookeeper(cluster);
-            LOGGER.debugCr(reconciliation, "Adding ZooKeeper connection configuration on node [{}]", node.podName());
+            if (externalZooKeeper != null) {
+                builder.withExternalZooKeeper(externalZooKeeper);
+                LOGGER.debugCr(reconciliation, "Adding external ZooKeeper connection configuration on node [{}]", node.podName());
+            } else {
+                builder.withZookeeper(cluster);
+                LOGGER.debugCr(reconciliation, "Adding ZooKeeper connection configuration on node [{}]", node.podName());
+            }
         }
 
         if ((node.broker() && this.kafkaMetadataConfigState.isMigration()) ||

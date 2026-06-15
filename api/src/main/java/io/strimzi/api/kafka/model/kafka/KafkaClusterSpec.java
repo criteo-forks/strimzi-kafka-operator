@@ -48,7 +48,7 @@ import java.util.Map;
 )
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
-    "version", "metadataVersion", "replicas", "image", "listeners", "config", "storage", "authorization", "rack",
+    "version", "metadataVersion", "replicas", "image", "listeners", "config", "externalZooKeeper", "storage", "authorization", "rack",
     "brokerRackInitImage", "serviceAccountName", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
     "logging", "template", "tieredStorage", "quotas"})
 @EqualsAndHashCode
@@ -73,6 +73,7 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
     private String version;
     private String metadataVersion;
     private Map<String, Object> config = new HashMap<>(0);
+    private ExternalZooKeeperSpec externalZooKeeper;
     private String brokerRackInitImage;
     private Rack rack;
     private Logging logging;
@@ -122,6 +123,16 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
 
     public void setConfig(Map<String, Object> config) {
         this.config = config;
+    }
+
+    @Description("Configuration for connecting Kafka brokers to an external ZooKeeper ensemble instead of deploying a Strimzi-managed ZooKeeper cluster.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public ExternalZooKeeperSpec getExternalZooKeeper() {
+        return externalZooKeeper;
+    }
+
+    public void setExternalZooKeeper(ExternalZooKeeperSpec externalZooKeeper) {
+        this.externalZooKeeper = externalZooKeeper;
     }
 
     @Description("The image of the init container used for initializing the `broker.rack`.")

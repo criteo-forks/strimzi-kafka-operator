@@ -28,6 +28,7 @@ import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.model.securityprofiles.PodSecurityProviderContextImpl;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.model.InvalidResourceException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -119,6 +120,10 @@ public class EntityOperator extends AbstractModel {
 
         if (entityOperatorSpec != null
                 && (entityOperatorSpec.getUserOperator() != null || entityOperatorSpec.getTopicOperator() != null)) {
+            if (kafkaAssembly.getSpec().getKafka().getExternalZooKeeper() != null) {
+                throw new InvalidResourceException("spec.entityOperator is not supported with spec.kafka.externalZooKeeper.");
+            }
+
             EntityOperator result = new EntityOperator(reconciliation, kafkaAssembly, sharedEnvironmentProvider);
 
             EntityTopicOperator topicOperator = EntityTopicOperator.fromCrd(reconciliation, kafkaAssembly, sharedEnvironmentProvider, config);
