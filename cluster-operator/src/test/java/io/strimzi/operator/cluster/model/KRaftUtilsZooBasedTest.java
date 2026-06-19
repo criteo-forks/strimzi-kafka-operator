@@ -5,6 +5,8 @@
 package io.strimzi.operator.cluster.model;
 
 import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.GenericSecretSourceBuilder;
+import io.strimzi.api.kafka.model.kafka.ExternalZooKeeperSpecBuilder;
 import io.strimzi.api.kafka.model.kafka.Kafka;
 import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
 import io.strimzi.api.kafka.model.kafka.KafkaSpec;
@@ -100,6 +102,35 @@ public class KRaftUtilsZooBasedTest {
 
         InvalidResourceException e = assertThrows(InvalidResourceException.class, () -> KRaftUtils.validateKafkaCrForZooKeeper(spec, false));
         assertThat(e.getMessage(), containsString("The .spec.zookeeper section of the Kafka custom resource is missing. This section is required for a ZooKeeper-based cluster."));
+    }
+
+    @ParallelTest
+    public void testExternalZooKeeperClusterDoesNotRequireManagedZooSection() {
+        KafkaSpec spec = new KafkaSpecBuilder()
+                .withNewKafka()
+                    .withReplicas(3)
+                    .withListeners(new GenericKafkaListenerBuilder()
+                            .withName("listener")
+                            .withPort(9092)
+                            .withTls(true)
+                            .withType(KafkaListenerType.INTERNAL)
+                            .build())
+                    .withNewEphemeralStorage()
+                    .endEphemeralStorage()
+                    .withExternalZooKeeper(new ExternalZooKeeperSpecBuilder()
+                            .withConnect("zk-0.example.com:2181,zk-1.example.com:2181/kafka")
+                            .withNewAuthentication()
+                                .withUsername("kafka")
+                                .withJaasConfig(new GenericSecretSourceBuilder()
+                                        .withSecretName("external-zookeeper-secret")
+                                        .withKey("zookeeper-jaas.conf")
+                                        .build())
+                            .endAuthentication()
+                            .build())
+                .endKafka()
+                .build();
+
+        assertDoesNotThrow(() -> KRaftUtils.validateKafkaCrForZooKeeper(spec, false));
     }
 
     @ParallelTest

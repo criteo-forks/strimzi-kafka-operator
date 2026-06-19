@@ -68,7 +68,7 @@ public class KRaftUtils {
         Set<String> errors = new HashSet<>(0);
 
         if (kafkaSpec != null)  {
-            if (kafkaSpec.getZookeeper() == null)   {
+            if (!usesExternalZooKeeper(kafkaSpec) && kafkaSpec.getZookeeper() == null)   {
                 errors.add("The .spec.zookeeper section of the Kafka custom resource is missing. " +
                         "This section is required for a ZooKeeper-based cluster.");
             }
@@ -91,6 +91,19 @@ public class KRaftUtils {
         if (!errors.isEmpty())  {
             throw new InvalidResourceException("Kafka configuration is not valid: " + errors);
         }
+    }
+
+    /**
+     * Checks whether the Kafka custom resource is configured to use an external ZooKeeper ensemble.
+     *
+     * @param kafkaSpec The .spec section of the Kafka CR which should be checked
+     *
+     * @return True when external ZooKeeper is configured. False otherwise.
+     */
+    public static boolean usesExternalZooKeeper(KafkaSpec kafkaSpec) {
+        return kafkaSpec != null
+                && kafkaSpec.getKafka() != null
+                && kafkaSpec.getKafka().getExternalZooKeeper() != null;
     }
 
     /**
