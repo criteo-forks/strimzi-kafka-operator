@@ -223,6 +223,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
 
     // Kafka configuration
     private ExternalZooKeeperSpec externalZooKeeper;
+    private String replicationAdvertisedHostTemplate;
     private Rack rack;
     private String initImage;
     private List<GenericKafkaListener> listeners;
@@ -335,6 +336,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         result.readinessProbeOptions = ProbeUtils.extractReadinessProbeOptionsOrDefault(kafkaClusterSpec, ProbeUtils.DEFAULT_HEALTHCHECK_OPTIONS);
         result.livenessProbeOptions = ProbeUtils.extractLivenessProbeOptionsOrDefault(kafkaClusterSpec, ProbeUtils.DEFAULT_HEALTHCHECK_OPTIONS);
         result.externalZooKeeper = kafkaClusterSpec.getExternalZooKeeper();
+        result.replicationAdvertisedHostTemplate = kafkaClusterSpec.getReplicationAdvertisedHostTemplate();
         result.rack = kafkaClusterSpec.getRack();
 
         String initImage = kafkaClusterSpec.getBrokerRackInitImage();
@@ -1315,7 +1317,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         Map<String, CertAndKey> brokerCerts;
 
         try {
-            brokerCerts = clusterCa.generateBrokerCerts(namespace, cluster, existingSecret, nodes, externalBootstrapDnsName, externalDnsNames, isMaintenanceTimeWindowsSatisfied);
+            brokerCerts = clusterCa.generateBrokerCerts(namespace, cluster, existingSecret, nodes, externalBootstrapDnsName, withReplicationAdvertisedDnsNames(nodes, externalDnsNames), isMaintenanceTimeWindowsSatisfied);
         } catch (IOException e) {
             LOGGER.warnCr(reconciliation, "Error while generating certificates", e);
             throw new RuntimeException("Failed to prepare Kafka certificates", e);
@@ -1328,6 +1330,39 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                         clientsCa.caCertGenerationFullAnnotation()
                 ),
                 emptyMap());
+    }
+
+    /**
+     * Adds the advertised hostnames of the replication listener to the per-broker DNS names which are used as the
+     * certificate SANs. This is needed only when the replication listener is advertised using a custom hostname
+     * template. With the default internal pod DNS name, the SAN is already covered by the wildcard service DNS names
+     * added in ClusterCa. Without this, a broker running outside Kubernetes would fail the TLS hostname verification
+     * when dialling the advertised address, even though the certificate itself is trusted.
+     *
+     * @param nodes             Nodes of this Kafka cluster
+     * @param externalDnsNames  Map with the per-broker DNS names collected from the client listeners
+     *
+     * @return  Map with the replication advertised hostnames added for the nodes with the broker role
+     */
+    private Map<Integer, Set<String>> withReplicationAdvertisedDnsNames(Set<NodeRef> nodes, Map<Integer, Set<String>> externalDnsNames) {
+        if (replicationAdvertisedHostTemplate == null) {
+            return externalDnsNames;
+        }
+
+        Map<Integer, Set<String>> dnsNames = new HashMap<>();
+
+        if (externalDnsNames != null) {
+            externalDnsNames.forEach((nodeId, names) -> dnsNames.put(nodeId, new LinkedHashSet<>(names)));
+        }
+
+        for (NodeRef node : nodes) {
+            if (node.broker()) {
+                dnsNames.computeIfAbsent(node.nodeId(), nodeId -> new LinkedHashSet<>())
+                        .add(ListenersUtils.renderHostTemplate(replicationAdvertisedHostTemplate, node));
+            }
+        }
+
+        return dnsNames;
     }
 
     /**
@@ -1935,7 +1970,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                                 namespace,
                                 listeners,
                                 listenerId -> advertisedHostnames.get(node.nodeId()).get(listenerId),
-                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId)
+                                listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId),
+                                replicationAdvertisedHostTemplate
                         )
                         .withAuthorization(cluster, authorization)
                         .withCruiseControl(cluster, ccMetricsReporter, node.broker())

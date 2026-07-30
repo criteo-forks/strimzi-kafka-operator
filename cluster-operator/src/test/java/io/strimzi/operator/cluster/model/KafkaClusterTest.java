@@ -122,6 +122,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasKey;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1323,6 +1324,49 @@ public class KafkaClusterTest {
                 List.of(2, "foo-kafka-brokers.test"),
                 List.of(2, "foo-kafka-brokers.test.svc"),
                 List.of(2, "foo-kafka-brokers.test.svc.cluster.local"))));
+    }
+
+    @ParallelTest
+    public void testGenerateBrokerSecretWithReplicationAdvertisedHostTemplate() throws CertificateParsingException {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withReplicationAdvertisedHostTemplate("broker-{nodeId}.kafka.example.com")
+                    .endKafka()
+                .endSpec()
+                .build();
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_CONTROLLERS, POOL_MIXED, POOL_BROKERS), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+
+        ClusterCa clusterCa = new ClusterCa(Reconciliation.DUMMY_RECONCILIATION, new OpenSslCertManager(), new PasswordGenerator(10, "a", "a"), CLUSTER, null, null);
+        clusterCa.createRenewOrReplace(NAMESPACE, Map.of(), Map.of(), Map.of(), null, true);
+        ClientsCa clientsCa = new ClientsCa(Reconciliation.DUMMY_RECONCILIATION, new OpenSslCertManager(), new PasswordGenerator(10, "a", "a"), null, null, null, null, 365, 30, true, CertificateExpirationPolicy.RENEW_CERTIFICATE);
+        clientsCa.createRenewOrReplace(NAMESPACE, Map.of(), Map.of(), Map.of(), null, true);
+
+        Secret secret = kc.generateCertificatesSecret(clusterCa, clientsCa, null, null, Map.of(), true);
+
+        // Nodes with the broker role advertise the replication listener with the rendered template, so the rendered
+        // name has to be in their SANs or the peer's TLS hostname verification fails
+        X509Certificate brokerCert = Ca.cert(secret, "foo-brokers-6.crt");
+        assertThat(brokerCert.getSubjectAlternativeNames(), hasItem(List.of(2, "broker-6.kafka.example.com")));
+
+        // Mixed nodes are brokers too
+        X509Certificate mixedCert = Ca.cert(secret, "foo-mixed-3.crt");
+        assertThat(mixedCert.getSubjectAlternativeNames(), hasItem(List.of(2, "broker-3.kafka.example.com")));
+
+        // Controller-only nodes have no replication listener, so they must not get the SAN
+        X509Certificate controllerCert = Ca.cert(secret, "foo-controllers-0.crt");
+        assertThat(controllerCert.getSubjectAlternativeNames(), not(hasItem(List.of(2, "broker-0.kafka.example.com"))));
+        assertThat(controllerCert.getSubjectAlternativeNames().size(), is(10));
+    }
+
+    @ParallelTest
+    public void testGenerateBrokerSecretWithoutReplicationAdvertisedHostTemplate() throws CertificateParsingException {
+        // Without the template, the SANs must be exactly what they were before the feature was added
+        Secret secret = generateBrokerSecret(null, Map.of());
+
+        X509Certificate cert = Ca.cert(secret, "foo-brokers-6.crt");
+        assertThat(cert.getSubjectAlternativeNames().size(), is(10));
     }
 
     @ParallelTest

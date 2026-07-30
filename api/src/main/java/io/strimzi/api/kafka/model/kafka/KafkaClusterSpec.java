@@ -48,7 +48,8 @@ import java.util.Map;
 )
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
-    "version", "metadataVersion", "replicas", "image", "listeners", "config", "externalZooKeeper", "storage", "authorization", "rack",
+    "version", "metadataVersion", "replicas", "image", "listeners", "config", "externalZooKeeper",
+    "replicationAdvertisedHostTemplate", "storage", "authorization", "rack",
     "brokerRackInitImage", "serviceAccountName", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
     "logging", "template", "tieredStorage", "quotas"})
 @EqualsAndHashCode
@@ -74,6 +75,7 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
     private String metadataVersion;
     private Map<String, Object> config = new HashMap<>(0);
     private ExternalZooKeeperSpec externalZooKeeper;
+    private String replicationAdvertisedHostTemplate;
     private String brokerRackInitImage;
     private Rack rack;
     private Logging logging;
@@ -133,6 +135,20 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
 
     public void setExternalZooKeeper(ExternalZooKeeperSpec externalZooKeeper) {
         this.externalZooKeeper = externalZooKeeper;
+    }
+
+    @Description("Template used to build the advertised hostname of the internal replication listener. " +
+            "Supports the `{nodeId}` and `{nodePodName}` placeholders, the same as the `advertisedHostTemplate` field of the client listeners. " +
+            "By default, the replication listener is advertised using the Kubernetes internal pod DNS name, which cannot be resolved from outside the Kubernetes cluster. " +
+            "Set this field when brokers running outside Kubernetes have to replicate with the brokers managed by Strimzi, for example during a migration to Kubernetes. " +
+            "The rendered hostnames are also added to the SANs of the broker certificates.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public String getReplicationAdvertisedHostTemplate() {
+        return replicationAdvertisedHostTemplate;
+    }
+
+    public void setReplicationAdvertisedHostTemplate(String replicationAdvertisedHostTemplate) {
+        this.replicationAdvertisedHostTemplate = replicationAdvertisedHostTemplate;
     }
 
     @Description("The image of the init container used for initializing the `broker.rack`.")

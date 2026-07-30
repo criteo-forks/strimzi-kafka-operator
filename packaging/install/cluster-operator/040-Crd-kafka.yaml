@@ -600,6 +600,9 @@ spec:
                     - connect
                     - authentication
                     description: Configuration for connecting Kafka brokers to an external ZooKeeper ensemble instead of deploying a Strimzi-managed ZooKeeper cluster.
+                  replicationAdvertisedHostTemplate:
+                    type: string
+                    description: "Template used to build the advertised hostname of the internal replication listener. Supports the `{nodeId}` and `{nodePodName}` placeholders, the same as the `advertisedHostTemplate` field of the client listeners. By default, the replication listener is advertised using the Kubernetes internal pod DNS name, which cannot be resolved from outside the Kubernetes cluster. Set this field when brokers running outside Kubernetes have to replicate with the brokers managed by Strimzi, for example during a migration to Kubernetes. The rendered hostnames are also added to the SANs of the broker certificates."
                   storage:
                     type: object
                     properties:
