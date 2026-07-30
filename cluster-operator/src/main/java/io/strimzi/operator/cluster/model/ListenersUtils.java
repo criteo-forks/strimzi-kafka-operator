@@ -484,7 +484,7 @@ public class ListenersUtils {
      *
      * @return  The rendered template
      */
-    /* test */ static String renderHostTemplate(String template, NodeRef node) {
+    static String renderHostTemplate(String template, NodeRef node) {
         return template
                 .replace("{nodeId}", Integer.toString(node.nodeId()))
                 .replace("{nodePodName}", node.podName());

@@ -271,7 +271,6 @@ public class KafkaBrokerConfigurationBuilder {
      *                                   This is used to configure the user-configurable listeners.
      * @return Returns the builder instance
      */
-    @SuppressWarnings({"checkstyle:CyclomaticComplexity"})
     public KafkaBrokerConfigurationBuilder withListeners(
             String clusterName,
             KafkaVersion kafkaVersion,
@@ -279,6 +278,35 @@ public class KafkaBrokerConfigurationBuilder {
             List<GenericKafkaListener> kafkaListeners,
             Function<String, String> advertisedHostnameProvider,
             Function<String, String> advertisedPortProvider
+    )  {
+        return withListeners(clusterName, kafkaVersion, namespace, kafkaListeners, advertisedHostnameProvider, advertisedPortProvider, null);
+    }
+
+    /**
+     * Configures the listeners based on the listeners enabled by the users in the Kafka CR. This method is used to
+     * generate the per-broker configuration which uses actual broker IDs and addresses instead of just placeholders.
+     *
+     * @param clusterName                       Name of the cluster (important for the advertised hostnames)
+     * @param kafkaVersion                      Kafka version of the cluster
+     * @param namespace                         Namespace (important for generating the advertised hostname)
+     * @param kafkaListeners                    The listeners configuration from the Kafka CR
+     * @param advertisedHostnameProvider        Lambda method which provides the advertised hostname for given listener and
+     *                                          broker. This is used to configure the user-configurable listeners.
+     * @param advertisedPortProvider            Lambda method which provides the advertised port for given listener and broker.
+     *                                          This is used to configure the user-configurable listeners.
+     * @param replicationAdvertisedHostTemplate Template used to build the advertised hostname of the replication
+     *                                          listener. When null, the Kubernetes internal pod DNS name is used.
+     * @return Returns the builder instance
+     */
+    @SuppressWarnings({"checkstyle:CyclomaticComplexity"})
+    public KafkaBrokerConfigurationBuilder withListeners(
+            String clusterName,
+            KafkaVersion kafkaVersion,
+            String namespace,
+            List<GenericKafkaListener> kafkaListeners,
+            Function<String, String> advertisedHostnameProvider,
+            Function<String, String> advertisedPortProvider,
+            String replicationAdvertisedHostTemplate
     )  {
         List<String> listeners = new ArrayList<>();
         List<String> advertisedListeners = new ArrayList<>();
@@ -324,8 +352,7 @@ public class KafkaBrokerConfigurationBuilder {
             listeners.add(REPLICATION_LISTENER_NAME + "://0.0.0.0:9091");
             advertisedListeners.add(String.format("%s://%s:9091",
                     REPLICATION_LISTENER_NAME,
-                    // Pod name constructed to be templatable for each individual ordinal
-                    DnsNameGenerator.podDnsNameWithoutClusterDomain(namespace, KafkaResources.brokersServiceName(clusterName), node.podName())
+                    replicationAdvertisedHost(clusterName, namespace, replicationAdvertisedHostTemplate)
             ));
 
             for (GenericKafkaListener listener : kafkaListeners) {
@@ -405,6 +432,27 @@ public class KafkaBrokerConfigurationBuilder {
 
         printSectionHeader("Control Plane listener");
         configureListener(controlPlaneListenerName);
+    }
+
+    /**
+     * Internal method which resolves the hostname the replication listener is advertised with. By default, this is the
+     * Kubernetes internal pod DNS name, which is only resolvable from inside the Kubernetes cluster. When a template is
+     * configured, it is rendered for this node instead, so that brokers running outside Kubernetes are able to resolve
+     * and dial the address they read from the shared cluster metadata.
+     *
+     * @param clusterName   Name of the cluster
+     * @param namespace     Namespace of the cluster
+     * @param template      Template to render, or null to use the internal pod DNS name
+     *
+     * @return  The hostname to advertise for the replication listener
+     */
+    private String replicationAdvertisedHost(String clusterName, String namespace, String template) {
+        if (template != null) {
+            return ListenersUtils.renderHostTemplate(template, node);
+        } else {
+            // Pod name constructed to be templatable for each individual ordinal
+            return DnsNameGenerator.podDnsNameWithoutClusterDomain(namespace, KafkaResources.brokersServiceName(clusterName), node.podName());
+        }
     }
 
     /**

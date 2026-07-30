@@ -816,6 +816,44 @@ public class KafkaBrokerConfigurationBuilderTest {
     }
 
     @ParallelTest
+    public void testReplicationAdvertisedHostTemplate() {
+        String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "broker-{nodeId}.kafka.example.com")
+                .build();
+
+        // The replication listener is advertised with the rendered template instead of the internal pod DNS name. The
+        // control plane listener is not affected.
+        assertThat(configuration, containsString("advertised.listeners=CONTROLPLANE-9090://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9090,REPLICATION-9091://broker-2.kafka.example.com:9091"));
+        // The bound address is unchanged - only the advertised one is templated
+        assertThat(configuration, containsString("listeners=CONTROLPLANE-9090://0.0.0.0:9090,REPLICATION-9091://0.0.0.0:9091"));
+    }
+
+    @ParallelTest
+    public void testReplicationAdvertisedHostTemplateWithPodName() {
+        String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "{nodePodName}.kafka.example.com")
+                .build();
+
+        assertThat(configuration, containsString("REPLICATION-9091://my-cluster-kafka-2.kafka.example.com:9091"));
+    }
+
+    @ParallelTest
+    public void testReplicationAdvertisedHostTemplateNotSetIsIdenticalToDefault() {
+        String withoutTemplate = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null)
+                .build();
+
+        String withNullTemplate = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, null)
+                .build();
+
+        // An unset template must not change the rendered configuration at all, otherwise enabling the feature flag
+        // would roll every broker pod
+        assertThat(withNullTemplate, equalTo(withoutTemplate));
+        assertThat(withoutTemplate, containsString("REPLICATION-9091://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9091"));
+    }
+
+    @ParallelTest
     public void testConnectionLimits()  {
         GenericKafkaListener listener1 = new GenericKafkaListenerBuilder()
                 .withName("listener1")
