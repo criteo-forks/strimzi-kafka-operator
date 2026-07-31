@@ -818,7 +818,7 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testReplicationAdvertisedHostTemplate() {
         String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
-                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "broker-{nodeId}.kafka.example.com")
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "broker-{nodeId}.kafka.example.com", true)
                 .build();
 
         // The replication listener is advertised with the rendered template instead of the internal pod DNS name. The
@@ -831,7 +831,7 @@ public class KafkaBrokerConfigurationBuilderTest {
     @ParallelTest
     public void testReplicationAdvertisedHostTemplateWithPodName() {
         String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
-                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "{nodePodName}.kafka.example.com")
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, "{nodePodName}.kafka.example.com", true)
                 .build();
 
         assertThat(configuration, containsString("REPLICATION-9091://my-cluster-kafka-2.kafka.example.com:9091"));
@@ -844,13 +844,44 @@ public class KafkaBrokerConfigurationBuilderTest {
                 .build();
 
         String withNullTemplate = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
-                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, null)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, null, true)
                 .build();
 
         // An unset template must not change the rendered configuration at all, otherwise enabling the feature flag
         // would roll every broker pod
         assertThat(withNullTemplate, equalTo(withoutTemplate));
         assertThat(withoutTemplate, containsString("REPLICATION-9091://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9091"));
+    }
+
+    @ParallelTest
+    public void testWithoutDedicatedControlPlaneListener() {
+        String configuration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, null, false)
+                .build();
+
+        // The option is left unset entirely, so Kafka uses inter.broker.listener.name for the controller traffic
+        assertThat(configuration, not(containsString("control.plane.listener.name")));
+        assertThat(configuration, containsString("inter.broker.listener.name=REPLICATION-9091"));
+
+        // The listener itself is still opened, advertised and mapped - it is only no longer referenced
+        assertThat(configuration, containsString("listeners=CONTROLPLANE-9090://0.0.0.0:9090,REPLICATION-9091://0.0.0.0:9091"));
+        assertThat(configuration, containsString("CONTROLPLANE-9090://my-cluster-kafka-2.my-cluster-kafka-brokers.my-namespace.svc:9090"));
+        assertThat(configuration, containsString("listener.security.protocol.map=CONTROLPLANE-9090:SSL,REPLICATION-9091:SSL"));
+    }
+
+    @ParallelTest
+    public void testDedicatedControlPlaneListenerEnabledIsIdenticalToDefault() {
+        String defaultConfiguration = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null)
+                .build();
+
+        String explicitlyEnabled = new KafkaBrokerConfigurationBuilder(Reconciliation.DUMMY_RECONCILIATION, NODE_REF, KafkaMetadataConfigurationState.ZK)
+                .withListeners("my-cluster", KAFKA_3_8_0, "my-namespace", emptyList(), null, null, null, true)
+                .build();
+
+        // Enabling the flag explicitly must not change the rendered configuration, otherwise every broker pod rolls
+        assertThat(explicitlyEnabled, equalTo(defaultConfiguration));
+        assertThat(defaultConfiguration, containsString("control.plane.listener.name=CONTROLPLANE-9090"));
     }
 
     @ParallelTest

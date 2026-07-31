@@ -3817,6 +3817,30 @@ public class KafkaClusterZooBasedTest {
     }
 
     @ParallelTest
+    public void testUseDedicatedControlPlaneListenerFalseOmitsTheOption() {
+        Kafka kafkaAssembly = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withUseDedicatedControlPlaneListener(false)
+                    .endKafka()
+                .endSpec()
+                .build();
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly,
+                NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER),
+                VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+
+        String brokerConfig = kc.generatePerBrokerConfiguration(1,
+                Map.of(1, Map.of("PLAIN_9092", "broker-1", "TLS_9093", "broker-1")),
+                Map.of(1, Map.of("PLAIN_9092", "9092", "TLS_9093", "10001")));
+
+        // The option is left unset entirely, so Kafka uses the inter-broker listener for the controller traffic.
+        // The listener itself is still opened, it is only no longer referenced. The default (true) case is
+        // covered by KafkaBrokerConfigurationBuilderTest.
+        assertThat(brokerConfig, CoreMatchers.not(CoreMatchers.containsString("control.plane.listener.name")));
+        assertThat(brokerConfig, CoreMatchers.containsString("CONTROLPLANE-9090://0.0.0.0:9090"));
+    }
+
+    @ParallelTest
     public void testCruiseControlWithSingleNodeKafka() {
         Map<String, Object> config = new HashMap<>();
         config.put("offsets.topic.replication.factor", 1);
