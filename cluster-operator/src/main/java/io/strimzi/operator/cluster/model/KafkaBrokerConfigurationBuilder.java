@@ -279,7 +279,7 @@ public class KafkaBrokerConfigurationBuilder {
             Function<String, String> advertisedHostnameProvider,
             Function<String, String> advertisedPortProvider
     )  {
-        return withListeners(clusterName, kafkaVersion, namespace, kafkaListeners, advertisedHostnameProvider, advertisedPortProvider, null);
+        return withListeners(clusterName, kafkaVersion, namespace, kafkaListeners, advertisedHostnameProvider, advertisedPortProvider, null, true);
     }
 
     /**
@@ -296,6 +296,9 @@ public class KafkaBrokerConfigurationBuilder {
      *                                          This is used to configure the user-configurable listeners.
      * @param replicationAdvertisedHostTemplate Template used to build the advertised hostname of the replication
      *                                          listener. When null, the Kubernetes internal pod DNS name is used.
+     * @param useDedicatedControlPlaneListener  Whether controller to broker traffic uses its own control plane
+     *                                          listener. When false, control.plane.listener.name is not set and Kafka
+     *                                          falls back to the inter-broker listener.
      * @return Returns the builder instance
      */
     @SuppressWarnings({"checkstyle:CyclomaticComplexity"})
@@ -306,7 +309,8 @@ public class KafkaBrokerConfigurationBuilder {
             List<GenericKafkaListener> kafkaListeners,
             Function<String, String> advertisedHostnameProvider,
             Function<String, String> advertisedPortProvider,
-            String replicationAdvertisedHostTemplate
+            String replicationAdvertisedHostTemplate,
+            boolean useDedicatedControlPlaneListener
     )  {
         List<String> listeners = new ArrayList<>();
         List<String> advertisedListeners = new ArrayList<>();
@@ -402,7 +406,9 @@ public class KafkaBrokerConfigurationBuilder {
         }
 
         // Control plane listener is on all ZooKeeper based brokers, needed during migration as well, when broker still using ZooKeeper but KRaft controllers are ready
-        if (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration()) {
+        // When the dedicated control plane listener is disabled, the option is left unset so that Kafka uses the
+        // inter-broker listener for the controller to broker traffic instead (KIP-291)
+        if (node.broker() && kafkaMetadataConfigState.isZooKeeperToMigration() && useDedicatedControlPlaneListener) {
             writer.println("control.plane.listener.name=" + CONTROL_PLANE_LISTENER_NAME);
         }
 

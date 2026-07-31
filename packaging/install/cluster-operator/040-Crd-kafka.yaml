@@ -603,6 +603,9 @@ spec:
                   replicationAdvertisedHostTemplate:
                     type: string
                     description: "Template used to build the advertised hostname of the internal replication listener. Supports the `{nodeId}` and `{nodePodName}` placeholders, the same as the `advertisedHostTemplate` field of the client listeners. By default, the replication listener is advertised using the Kubernetes internal pod DNS name, which cannot be resolved from outside the Kubernetes cluster. Set this field when brokers running outside Kubernetes have to replicate with the brokers managed by Strimzi, for example during a migration to Kubernetes. The rendered hostnames are also added to the SANs of the broker certificates."
+                  useDedicatedControlPlaneListener:
+                    type: boolean
+                    description: "If `true` or not set, controller-to-broker traffic uses its own control plane listener. If `false`, `control.plane.listener.name` is not set and Kafka falls back to using the inter-broker listener for it. Set this to `false` when brokers managed outside Kubernetes are part of the same cluster and do not use a control plane listener, so that only the inter-broker listener has to match across both sets of brokers. The control plane listener is still opened and advertised, it is simply no longer referenced. Default is true."
                   storage:
                     type: object
                     properties:

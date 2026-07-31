@@ -224,6 +224,7 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
     // Kafka configuration
     private ExternalZooKeeperSpec externalZooKeeper;
     private String replicationAdvertisedHostTemplate;
+    private boolean useDedicatedControlPlaneListener;
     private Rack rack;
     private String initImage;
     private List<GenericKafkaListener> listeners;
@@ -337,6 +338,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         result.livenessProbeOptions = ProbeUtils.extractLivenessProbeOptionsOrDefault(kafkaClusterSpec, ProbeUtils.DEFAULT_HEALTHCHECK_OPTIONS);
         result.externalZooKeeper = kafkaClusterSpec.getExternalZooKeeper();
         result.replicationAdvertisedHostTemplate = kafkaClusterSpec.getReplicationAdvertisedHostTemplate();
+        // Defaults to true when not set, so that existing clusters keep their dedicated control plane listener
+        result.useDedicatedControlPlaneListener = !Boolean.FALSE.equals(kafkaClusterSpec.getUseDedicatedControlPlaneListener());
         result.rack = kafkaClusterSpec.getRack();
 
         String initImage = kafkaClusterSpec.getBrokerRackInitImage();
@@ -1971,7 +1974,8 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
                                 listeners,
                                 listenerId -> advertisedHostnames.get(node.nodeId()).get(listenerId),
                                 listenerId -> advertisedPorts.get(node.nodeId()).get(listenerId),
-                                replicationAdvertisedHostTemplate
+                                replicationAdvertisedHostTemplate,
+                                useDedicatedControlPlaneListener
                         )
                         .withAuthorization(cluster, authorization)
                         .withCruiseControl(cluster, ccMetricsReporter, node.broker())

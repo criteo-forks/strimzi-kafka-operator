@@ -49,7 +49,7 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({
     "version", "metadataVersion", "replicas", "image", "listeners", "config", "externalZooKeeper",
-    "replicationAdvertisedHostTemplate", "storage", "authorization", "rack",
+    "replicationAdvertisedHostTemplate", "useDedicatedControlPlaneListener", "storage", "authorization", "rack",
     "brokerRackInitImage", "serviceAccountName", "livenessProbe", "readinessProbe", "jvmOptions", "jmxOptions", "resources", "metricsConfig",
     "logging", "template", "tieredStorage", "quotas"})
 @EqualsAndHashCode
@@ -76,6 +76,7 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
     private Map<String, Object> config = new HashMap<>(0);
     private ExternalZooKeeperSpec externalZooKeeper;
     private String replicationAdvertisedHostTemplate;
+    private Boolean useDedicatedControlPlaneListener;
     private String brokerRackInitImage;
     private Rack rack;
     private Logging logging;
@@ -149,6 +150,21 @@ public class KafkaClusterSpec implements HasConfigurableMetrics, HasConfigurable
 
     public void setReplicationAdvertisedHostTemplate(String replicationAdvertisedHostTemplate) {
         this.replicationAdvertisedHostTemplate = replicationAdvertisedHostTemplate;
+    }
+
+    @Description("If `true` or not set, controller-to-broker traffic uses its own control plane listener. " +
+            "If `false`, `control.plane.listener.name` is not set and Kafka falls back to using the inter-broker listener for it. " +
+            "Set this to `false` when brokers managed outside Kubernetes are part of the same cluster and do not use a control plane listener, " +
+            "so that only the inter-broker listener has to match across both sets of brokers. " +
+            "The control plane listener is still opened and advertised, it is simply no longer referenced. " +
+            "Default is true.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public Boolean getUseDedicatedControlPlaneListener() {
+        return useDedicatedControlPlaneListener;
+    }
+
+    public void setUseDedicatedControlPlaneListener(Boolean useDedicatedControlPlaneListener) {
+        this.useDedicatedControlPlaneListener = useDedicatedControlPlaneListener;
     }
 
     @Description("The image of the init container used for initializing the `broker.rack`.")
