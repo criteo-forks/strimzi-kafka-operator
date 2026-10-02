@@ -327,10 +327,14 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         long numberOfBrokers = result.brokerNodes().size();
 
         ModelUtils.validateComputeResources(kafkaClusterSpec.getResources(), ".spec.kafka.resources");
-        validateIntConfigProperty("default.replication.factor", kafkaClusterSpec, numberOfBrokers);
-        validateIntConfigProperty("offsets.topic.replication.factor", kafkaClusterSpec, numberOfBrokers);
-        validateIntConfigProperty("transaction.state.log.replication.factor", kafkaClusterSpec, numberOfBrokers);
-        validateIntConfigProperty("transaction.state.log.min.isr", kafkaClusterSpec, numberOfBrokers);
+        // Criteo Fork: Skip broker-count validation in hybrid mode (external ZK), i.e. when the cluster is shared
+        // between kub and chef. If ever a mistake is done in the cluster config kafka will still raise an error in the runtime
+        if (kafkaClusterSpec.getExternalZooKeeper() == null) {
+            validateIntConfigProperty("default.replication.factor", kafkaClusterSpec, numberOfBrokers);
+            validateIntConfigProperty("offsets.topic.replication.factor", kafkaClusterSpec, numberOfBrokers);
+            validateIntConfigProperty("transaction.state.log.replication.factor", kafkaClusterSpec, numberOfBrokers);
+            validateIntConfigProperty("transaction.state.log.min.isr", kafkaClusterSpec, numberOfBrokers);
+        }
         validateExternalZooKeeper(kafkaSpec, kafkaClusterSpec);
 
         result.image = versions.kafkaImage(kafkaClusterSpec.getImage(), kafkaClusterSpec.getVersion());
